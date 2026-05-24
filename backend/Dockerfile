@@ -19,4 +19,9 @@ RUN pip install --no-cache-dir ".[azure]"
 
 EXPOSE 8000
 
-CMD ["uvicorn", "automunki.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# entrypoint.sh runs `alembic upgrade head` on start, then execs uvicorn.
+# We can't migrate from CI (`az containerapp exec` is interactive-only and
+# fails in non-TTY runners with `termios.error: Inappropriate ioctl for
+# device`), so migrations are gated on container start instead. Set
+# RUN_MIGRATIONS_ON_START=false to skip when needed.
+CMD ["/app/entrypoint.sh"]

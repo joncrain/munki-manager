@@ -115,8 +115,13 @@ make tf-output | grep frontend_default_url
 # https://ca-munkimanager-frontend.<env>.<region>.azurecontainerapps.io
 ```
 
-Open that URL — you should see the Munki Manager UI. Run migrations the first
-time (and after every schema-changing release):
+Open that URL — you should see the Munki Manager UI. Migrations run
+automatically every time the backend container starts (see
+`backend/entrypoint.sh`), so the first deploy already creates the schema and
+subsequent `make deploy`s pick up new revisions without a separate step.
+
+If you need to run migrations manually (e.g. an out-of-band fix on a
+container that has `RUN_MIGRATIONS_ON_START=false`):
 
 ```sh
 make migrate
@@ -263,7 +268,7 @@ quicker.)
 |------|---------|
 | Ship a code change (local) | `make deploy` |
 | Ship a code change (CI)    | GitHub Actions → **Deploy to Azure** workflow (`workflow_dispatch`), or push to `main` |
-| Run migrations | `make migrate` (or run with `run_migrations=true` in the deploy workflow) |
+| Run migrations | Automatic on every backend container start (`backend/entrypoint.sh`); use `make migrate` only for ad-hoc fixups |
 | Tail backend logs | `make logs-backend` |
 | Tail frontend logs | `make logs-frontend` |
 | Open psql against prod | `make psql` |
@@ -274,15 +279,15 @@ quicker.)
 
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) is the CI
 counterpart of `make deploy`. It runs `az acr build` server-side for both
-images, rolls both Container Apps to the new tag, waits for the backend
-revision to report `Healthy`, and runs `alembic upgrade head` against the
-backend.
+images, rolls both Container Apps to the new tag, and waits for the backend
+revision to report `Healthy`. Migrations run inside the backend container on
+start (`backend/entrypoint.sh` calls `alembic upgrade head` before exec'ing
+uvicorn), so there's no separate migration step in the workflow.
 
 Triggers:
 
 - **`workflow_dispatch`** — manual run from the Actions tab. Inputs:
   - `tag` (default: short git SHA)
-  - `run_migrations` (default: `true`)
   - `services` (`both` / `backend` / `frontend`)
 - **`push` to `main`** with changes under `backend/`, `frontend/`, or
   `.github/workflows/deploy.yml`. Always rolls both apps and runs migrations.
@@ -346,7 +351,7 @@ If you want PR/preview deploys, add a second federated credential with subject
 ```sh
 gh workflow run deploy.yml                          # dispatch with all defaults
 gh workflow run deploy.yml -f services=backend      # only the backend (e.g. config-only fix)
-gh workflow run deploy.yml -f run_migrations=false  # skip alembic (e.g. emergency rollback)
+gh workflow run deploy.yml -f services=frontend     # only the frontend (skip backend roll & on-start migration)
 ```
 
 Or push a code change to `main` and watch the workflow auto-trigger from the
@@ -356,10 +361,9 @@ Actions tab.
 
 - `AcrPush` covers `az acr build`.
 - `az containerapp update` requires either `Contributor` on the resource group
-  or the more granular `Container Apps Contributor` role. The latter doesn't
-  yet allow `az containerapp exec` (used for migrations), so we use
-  `Contributor` for simplicity. If you don't need migration-on-deploy, swap to
-  `Container Apps Contributor` and set `run_migrations=false`.
+  or the more granular `Container Apps Contributor` role. Either works for
+  the deploy workflow now that migrations run on container start (no
+  `az containerapp exec` from CI).
 
 Container Apps refreshes Key Vault references on every revision restart. To
 force an immediate refresh, restart the latest revision (the rotate command

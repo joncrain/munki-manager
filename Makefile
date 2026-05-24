@@ -8,12 +8,12 @@
 ##   1) cp terraform/terraform.tfvars.example terraform/terraform.tfvars && $EDITOR ...
 ##   2) make tf-init
 ##   3) make tf-apply        # bootstrap apply (no custom domain yet)
-##   4) make deploy          # build & push images, roll containers
-##   5) make migrate         # run alembic migrations against the new DB
-##   6) Cloudflare CNAME munki-manager.example.com -> $(make show-cname) (DNS only)
-##   7) Cloudflare TXT  asuid.munki-manager.example.com -> <token>  (the token comes from
+##   4) make deploy          # build & push images, roll containers (migrations
+##                            #  run automatically on backend container start)
+##   5) Cloudflare CNAME munki-manager.example.com -> $(make show-cname) (DNS only)
+##   6) Cloudflare TXT  asuid.munki-manager.example.com -> <token>  (the token comes from
 ##      `az containerapp hostname add`'s error message — see docs/azure-deployment.md)
-##   8) make tf-domain CUSTOM_DOMAIN=munki-manager.example.com
+##   7) make tf-domain CUSTOM_DOMAIN=munki-manager.example.com
 ##
 ## Day-2: `make deploy` is enough; Terraform state is unaffected by image rolls.
 
@@ -160,7 +160,7 @@ endif
 deploy: build roll    ## Build, push, and roll both apps in one shot.
 
 .PHONY: migrate
-migrate:              ## Run Alembic migrations inside a running backend replica. Run after every `make deploy` that ships a new migration.
+migrate:              ## Manually run Alembic migrations in a running backend replica. Normally not needed: backend/entrypoint.sh auto-runs `alembic upgrade head` on every container start, so `make deploy` already migrates as the new revision rolls out. Use this only for ad-hoc fixups (or when RUN_MIGRATIONS_ON_START=false).
 	@test -n "$(BACKEND_APP)" || (echo "Backend not provisioned." && exit 1)
 	az containerapp exec -g $(RG) -n $(BACKEND_APP) --command "alembic upgrade head"
 
