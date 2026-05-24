@@ -57,7 +57,6 @@ async def dispatch_autopkg_workflow(
     """Trigger the AutoPkg GitHub Actions workflow via workflow_dispatch."""
     if not settings.github_token or not settings.github_repo:
         return {"error": "GitHub token or repo not configured"}
-    # specify the db-mode branch
     url = f"{GITHUB_API}/repos/{settings.github_repo}/actions/workflows/autopkg_cloud_runner.yml/dispatches"
 
     api_url = settings.api_public_url or settings.cors_origins[0]
@@ -69,7 +68,7 @@ async def dispatch_autopkg_workflow(
         response = await client.post(
             url,
             headers=_github_headers(),
-            json={"ref": "db-mode", "inputs": inputs},
+            json={"ref": settings.github_workflow_ref, "inputs": inputs},
         )
 
     if response.status_code == 204:

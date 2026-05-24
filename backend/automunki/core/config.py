@@ -45,6 +45,10 @@ class Settings(BaseSettings):
 
     github_token: str = ""
     github_repo: str = ""
+    #: Branch to dispatch the AutoPkg cloud-runner workflow against. The workflow
+    #: file (``.github/workflows/autopkg_cloud_runner.yml``) must exist on this
+    #: branch. Defaults to ``main``.
+    github_workflow_ref: str = "main"
 
     #: Storage backend selector for the auto-uploader that pushes AutoPkg run
     #: outputs to object storage. ``none`` = no backend (default; serve pkgs

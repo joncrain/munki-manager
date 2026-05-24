@@ -2,7 +2,7 @@
 
 Munki Manager is a **database-backed web application** for managing **Munki** catalogs, manifests, and pkginfo, together with **AutoPkg** recipe overrides, runs, and approvals. Munki clients continue to use standard HTTP repo URLs; the server compiles catalogs and manifests from PostgreSQL on demand.
 
-This branch (`db-mode`) is the **full-stack product**: a React SPA, FastAPI API, RBAC, and Postgres — not a Git-only repo wrapper.
+It's a full-stack product: a React SPA, FastAPI API, RBAC, and Postgres — not a Git-only repo wrapper.
 
 ## Stack
 
