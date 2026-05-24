@@ -1,0 +1,77 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+#
+# Generate the two random secrets with:
+#   openssl rand -hex 32
+
+# --- Required (no defaults) ---------------------------------------------
+
+# Strong Postgres admin password. 16+ chars, mix of upper/lower/digits/symbols.
+postgres_admin_password = "REPLACE-ME-with-a-strong-password"
+
+# FastAPI JWT signing secret. `openssl rand -hex 32`.
+app_secret_key = "REPLACE-ME-with-openssl-rand-hex-32"
+
+# --- Optional but recommended -------------------------------------------
+
+# GitHub PAT used by the backend for AutoPkg recipe operations.
+github_token = ""
+github_repo  = "joncrain/munki-manager-recipes"
+
+# Shared bearer token for AutoPkg runners (both `poll_local_autopkg.sh` and
+# the GitHub Actions cloud runner). Generate with `openssl rand -hex 32`.
+#
+# REQUIRED if you want either runner to ingest results — every AutoPkg
+# webhook (`/runs/{id}/results`, `/complete`, `/github-context`,
+# `/pkginfo/ingest`, `/icons/ingest`) is now Bearer-gated. Without this,
+# runner calls return 401. See `docs/security-overview.md` finding 1.2.
+#
+# After setting this, also set the same value as a GitHub Actions secret
+# named `MUNKI_MANAGER_RUNNER_TOKEN` on the repo that hosts the cloud
+# runner workflow (`.github/workflows/autopkg_cloud_runner.yml`).
+local_runner_token = ""
+
+# Slack notifications.
+slack_webhook_url = ""
+
+# Operator IPs that may reach the storage account control plane (for `az
+# storage` commands AND for `terraform plan/apply` state-refresh reads).
+# The Container Apps env's outbound IP is added automatically — only list
+# operator/laptop/CI IPs here.
+#
+# Setting this enables `azurerm_storage_account_network_rules.repo`
+# (`default_action = "Deny"`). Leaving it empty leaves the storage account's
+# control plane open. Public anonymous reads on the `munki-repo` container
+# are unaffected either way.
+#
+# WARNING: once you enable the firewall, *every* subsequent `terraform
+# plan/apply` runs from a machine whose IP is not on this list will fail
+# with 403 on the storage account refresh — keep your CI / laptop IPs in
+# sync with reality.
+# operator_ip_allowlist = ["203.0.113.42/32"]
+
+# --- Defaults you may want to override ----------------------------------
+
+location      = "eastus2"
+name_prefix   = "munkimanager"
+custom_domain = "munki-manager.joncra.in"
+
+# Set to `true` for the SECOND apply (after the Cloudflare CNAME is in place).
+enable_custom_domain = false
+
+# Cost knobs.
+#
+# Defaults: backend_min_replicas = 1 (warm, ~$3-8/mo over the free grant),
+# frontend_min_replicas = 0 (scale-to-zero — nginx cold-starts in <1s).
+# Set backend_min_replicas = 0 for the absolute cheapest config; expect a
+# 5-15s cold start on the first request after ~5 min of idle.
+# backend_min_replicas  = 1
+# backend_max_replicas  = 3
+# frontend_min_replicas = 0
+# frontend_max_replicas = 3
+# postgres_sku    = "B_Standard_B1ms"   # 1 vCPU / 2 GiB
+# postgres_storage_mb = 32768           # 32 GiB
+
+# These are managed by `make deploy` after the first apply; leave at defaults
+# for the bootstrap apply.
+# backend_image_tag  = "latest"
+# frontend_image_tag = "latest"

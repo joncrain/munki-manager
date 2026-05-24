@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bump-minor-pre-major": true,
+  "group-pull-request-title-pattern": "chore: release ${version}",
+  "separate-pull-requests": false,
+  "include-component-in-tag": false,
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "munki-manager",
+      "components": ["frontend", "backend"]
+    }
+  ],
+  "packages": {
+    "frontend": {
+      "component": "frontend",
+      "release-type": "node",
+      "changelog-path": "CHANGELOG.md",
+      "include-v-in-tag": false
+    },
+    "backend": {
+      "component": "backend",
+      "release-type": "python",
+      "package-name": "automunki",
+      "changelog-path": "CHANGELOG.md",
+      "include-v-in-tag": false,
+      "extra-files": ["automunki/main.py"]
+    }
+  }
+}
