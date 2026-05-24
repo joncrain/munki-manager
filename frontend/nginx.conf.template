@@ -1,0 +1,68 @@
+server {
+    listen       3000;
+    server_name  _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Allow large pkg/dmg uploads through to the backend. The default
+    # client_max_body_size is 1m, which immediately 413s any real package
+    # upload and surfaces in the browser as a generic "network error"
+    # because the body is truncated mid-stream. ``0`` disables the cap and
+    # lets Container Apps ingress + the backend be the real bound.
+    client_max_body_size 0;
+
+    # API, repo, and icon proxy to backend.
+    # NOTE: do NOT override Host with $host. When deployed to platforms that
+    # route by Host header (e.g. Azure Container Apps), forwarding the
+    # frontend's hostname makes the backend's ingress think the request is
+    # for the wrong app and reply with a 301 to itself (infinite loop).
+    # Letting nginx default to the upstream hostname (from BACKEND_URL) is
+    # what we want.
+    location /api/ {
+        proxy_pass ${BACKEND_URL}/api/;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+
+        # Stream uploads straight through instead of spooling the entire
+        # request body to disk first. Without this, nginx buffers a 500 MB
+        # pkg to /tmp before forwarding, which is slow and risks ENOSPC.
+        proxy_request_buffering off;
+        proxy_http_version 1.1;
+
+        # Long enough for slow uploads of large packages over residential
+        # uplinks. Default 60s timed out half-way through 200 MB pkgs.
+        proxy_read_timeout    600s;
+        proxy_send_timeout    600s;
+        proxy_connect_timeout 60s;
+    }
+
+    location /repo/ {
+        proxy_pass ${BACKEND_URL}/repo/;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
+    location /icons/ {
+        proxy_pass ${BACKEND_URL}/api/v1/icons/;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
+    # SPA fallback — serve index.html for all unmatched routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache static assets
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}

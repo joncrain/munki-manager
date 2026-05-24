@@ -1,0 +1,16 @@
+# Terraform state — local backend only; do not commit.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform working dir
+.terraform/
+.terraform.lock.hcl
+
+# Plan outputs
+*.tfplan
+
+# Operator-supplied secrets — keep terraform.tfvars.example committed, the real
+# tfvars file out.
+terraform.tfvars
+*.auto.tfvars

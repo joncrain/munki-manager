@@ -1,0 +1,22 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the entire project before `pip install .` so hatchling can find the
+# `automunki/` package directory at build time. (Splitting pyproject.toml off
+# for layer caching is tempting but breaks the wheel build, which needs the
+# source tree to determine which files to ship.)
+COPY . .
+
+# Install with the [azure] extra so the Azure Blob storage backend
+# (azure-storage-blob, azure-identity) is available when STORAGE_BACKEND=azure_blob.
+# Local dev installs (uv sync) skip this extra by default; see pyproject.toml.
+RUN pip install --no-cache-dir ".[azure]"
+
+EXPOSE 8000
+
+CMD ["uvicorn", "automunki.main:app", "--host", "0.0.0.0", "--port", "8000"]

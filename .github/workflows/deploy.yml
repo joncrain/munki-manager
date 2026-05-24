@@ -1,0 +1,202 @@
+name: Deploy to Azure
+
+# One-shot build + push + roll for both Container Apps. Mirrors `make deploy`
+# (server-side `az acr build` + `az containerapp update`) but runs in CI with
+# OIDC federated credentials instead of a local az login.
+#
+# Bootstrap (one-time, see docs/azure-deployment.md#github-actions-deploy):
+#   1. Create an app registration + federated credential for this repo.
+#   2. Grant the SP: AcrPush on the registry, Container Apps Contributor on the
+#      resource group (or Contributor at RG scope for simplicity).
+#   3. Set GitHub repo Variables:
+#        AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#        AZURE_RESOURCE_GROUP (e.g. rg-munkimanager).
+#
+# Triggers:
+#   - workflow_dispatch (always available; pick a tag, toggle migrations).
+#   - push to main when backend/, frontend/, or this workflow changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (default: short git SHA)'
+        required: false
+        type: string
+      run_migrations:
+        description: 'Run alembic upgrade head after rolling the backend'
+        required: false
+        type: boolean
+        default: true
+      services:
+        description: 'Which images to (re)build and roll'
+        required: false
+        type: choice
+        default: both
+        options:
+          - both
+          - backend
+          - frontend
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  id-token: write   # required for OIDC federated login to Azure
+  contents: read
+
+concurrency:
+  # Serialise deploys: never roll the same env from two jobs at once.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'rg-munkimanager' }}
+  BACKEND_APP: ca-munkimanager-backend
+  FRONTEND_APP: ca-munkimanager-frontend
+
+jobs:
+  deploy:
+    name: Build & roll
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Resolve image tag & service selection
+        id: cfg
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="$(git rev-parse --short HEAD)"
+          fi
+          SERVICES="${{ inputs.services }}"
+          if [ -z "$SERVICES" ]; then SERVICES="both"; fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "services=${SERVICES}" >> "$GITHUB_OUTPUT"
+          echo "Deploying tag=${TAG} services=${SERVICES}"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Discover ACR name
+        id: acr
+        run: |
+          ACR_NAME=$(az acr list -g "$AZURE_RESOURCE_GROUP" --query '[0].name' -o tsv)
+          if [ -z "$ACR_NAME" ]; then
+            echo "::error::No ACR found in resource group $AZURE_RESOURCE_GROUP"
+            exit 1
+          fi
+          ACR_LOGIN=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)
+          echo "name=${ACR_NAME}" >> "$GITHUB_OUTPUT"
+          echo "login=${ACR_LOGIN}" >> "$GITHUB_OUTPUT"
+          echo "Using ACR: ${ACR_LOGIN}"
+
+      - name: Build & push backend image
+        if: steps.cfg.outputs.services == 'both' || steps.cfg.outputs.services == 'backend'
+        run: |
+          az acr build \
+            --registry "${{ steps.acr.outputs.name }}" \
+            --image "munki-manager-backend:${{ steps.cfg.outputs.tag }}" \
+            --image "munki-manager-backend:latest" \
+            --file backend/Dockerfile backend
+
+      - name: Build & push frontend image
+        if: steps.cfg.outputs.services == 'both' || steps.cfg.outputs.services == 'frontend'
+        run: |
+          az acr build \
+            --registry "${{ steps.acr.outputs.name }}" \
+            --image "munki-manager-frontend:${{ steps.cfg.outputs.tag }}" \
+            --image "munki-manager-frontend:latest" \
+            --build-arg "VITE_BUILD_SHA=${{ steps.cfg.outputs.tag }}" \
+            --file frontend/Dockerfile frontend
+
+      - name: Resolve image digests
+        # Pin Container Apps to ``…@sha256:…`` instead of ``…:tag``. When the
+        # git SHA hasn't changed (e.g. you re-deployed with uncommitted edits
+        # to a config file) the tag is unchanged in Container Apps' eyes and
+        # ``az containerapp update --image …:tag`` is a no-op. Pinning the
+        # digest forces a new revision every time.
+        id: digests
+        run: |
+          if [ "${{ steps.cfg.outputs.services }}" != "frontend" ]; then
+            BACKEND_DIGEST=$(az acr repository show \
+              --name "${{ steps.acr.outputs.name }}" \
+              --image "munki-manager-backend:${{ steps.cfg.outputs.tag }}" \
+              --query digest -o tsv)
+            echo "backend=${BACKEND_DIGEST}" >> "$GITHUB_OUTPUT"
+            echo "Backend digest: ${BACKEND_DIGEST}"
+          fi
+          if [ "${{ steps.cfg.outputs.services }}" != "backend" ]; then
+            FRONTEND_DIGEST=$(az acr repository show \
+              --name "${{ steps.acr.outputs.name }}" \
+              --image "munki-manager-frontend:${{ steps.cfg.outputs.tag }}" \
+              --query digest -o tsv)
+            echo "frontend=${FRONTEND_DIGEST}" >> "$GITHUB_OUTPUT"
+            echo "Frontend digest: ${FRONTEND_DIGEST}"
+          fi
+
+      - name: Roll backend Container App
+        if: steps.cfg.outputs.services == 'both' || steps.cfg.outputs.services == 'backend'
+        run: |
+          az containerapp update \
+            -g "$AZURE_RESOURCE_GROUP" -n "$BACKEND_APP" \
+            --image "${{ steps.acr.outputs.login }}/munki-manager-backend@${{ steps.digests.outputs.backend }}" \
+            --output none
+          echo "Rolled backend to tag ${{ steps.cfg.outputs.tag }} (${{ steps.digests.outputs.backend }})"
+
+      - name: Roll frontend Container App
+        if: steps.cfg.outputs.services == 'both' || steps.cfg.outputs.services == 'frontend'
+        run: |
+          az containerapp update \
+            -g "$AZURE_RESOURCE_GROUP" -n "$FRONTEND_APP" \
+            --image "${{ steps.acr.outputs.login }}/munki-manager-frontend@${{ steps.digests.outputs.frontend }}" \
+            --output none
+          echo "Rolled frontend to tag ${{ steps.cfg.outputs.tag }} (${{ steps.digests.outputs.frontend }})"
+
+      - name: Wait for backend revision to be healthy
+        if: steps.cfg.outputs.services == 'both' || steps.cfg.outputs.services == 'backend'
+        run: |
+          # New revisions take ~30-90s to become Ready. Poll for up to 5 min.
+          for i in $(seq 1 30); do
+            STATE=$(az containerapp revision list \
+              -g "$AZURE_RESOURCE_GROUP" -n "$BACKEND_APP" \
+              --query "[?properties.active].properties.healthState | [0]" -o tsv 2>/dev/null || echo "")
+            printf "  [%2d/30] backend health: %s\n" "$i" "${STATE:-unknown}"
+            if [ "$STATE" = "Healthy" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "::warning::Backend did not report Healthy within 5 min; continuing anyway."
+
+      - name: Run alembic migrations
+        # `inputs.run_migrations` defaults to true on workflow_dispatch and is
+        # unset on push events — treat unset as true so push-to-main also runs
+        # migrations. Set the workflow_dispatch input to false to skip.
+        if: |
+          (steps.cfg.outputs.services == 'both' || steps.cfg.outputs.services == 'backend') &&
+          (github.event_name != 'workflow_dispatch' || inputs.run_migrations)
+        run: |
+          # `az containerapp exec` is interactive by default; redirecting stdin
+          # from /dev/null and feeding `alembic upgrade head` as --command runs
+          # one-shot and exits.
+          az containerapp exec \
+            -g "$AZURE_RESOURCE_GROUP" -n "$BACKEND_APP" \
+            --command "alembic upgrade head" </dev/null
+
+      - name: Print frontend URL
+        if: always()
+        run: |
+          FQDN=$(az containerapp show \
+            -g "$AZURE_RESOURCE_GROUP" -n "$FRONTEND_APP" \
+            --query 'properties.configuration.ingress.fqdn' -o tsv 2>/dev/null || echo "")
+          if [ -n "$FQDN" ]; then echo "Frontend: https://${FQDN}"; fi
