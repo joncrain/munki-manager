@@ -306,8 +306,8 @@ quicker.)
 | Tail backend logs | `make logs-backend` |
 | Tail frontend logs | `make logs-frontend` |
 | Open psql against prod | `make psql` |
-| Rotate a secret | Edit the corresponding variable in `terraform/terraform.tfvars` (e.g. `app_secret_key`, `github_token`, `postgres_admin_password`, `local_runner_token`), then `make tf-apply` to push it into Key Vault, then `az containerapp revision restart -g rg-munkimanager -n ca-munkimanager-backend --revision $(az containerapp revision list -g rg-munkimanager -n ca-munkimanager-backend --query "[?properties.active].name \| [0]" -o tsv)`. Direct `az keyvault secret set` writes get overwritten the next time anyone runs `terraform apply` because `terraform/keyvault.tf` owns the secret value. |
-| Rotate the GitHub PAT | Update `github_token` in `terraform.tfvars` to the new classic PAT, `make tf-apply`, then restart the backend revision (command above). Sanity-check the budget with `curl -H "Authorization: Bearer $TOK" https://api.github.com/rate_limit` — `core.limit` should be 5000 (authenticated). For a classic PAT also confirm it can read `autopkg/*`: `curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $TOK" https://api.github.com/repos/autopkg/recipes` should return `200`. |
+| Rotate a secret | Edit the corresponding variable in `terraform/terraform.tfvars` (e.g. `app_secret_key`, `github_token`, `postgres_admin_password`, `local_runner_token`), then `make tf-apply` to push it into Key Vault, then **force a new backend revision** with `az containerapp update -g rg-munkimanager -n ca-munkimanager-backend --revision-suffix kvref$(date +%s)`. A plain `az containerapp revision restart` does **not** re-resolve Key Vault references — Container Apps only re-fetches them when a new revision is created, so a restart leaves the old secret value in the container's env. Direct `az keyvault secret set` writes get overwritten the next time anyone runs `terraform apply` because `terraform/keyvault.tf` owns the secret value. |
+| Rotate the GitHub PAT | Update `github_token` in `terraform.tfvars` to the new classic PAT, `make tf-apply`, then force a new backend revision (command above). Sanity-check the budget with `curl -H "Authorization: Bearer $TOK" https://api.github.com/rate_limit` — `core.limit` should be 5000 (authenticated). For a classic PAT also confirm it can read `autopkg/*`: `curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $TOK" https://api.github.com/repos/autopkg/recipes` should return `200`. |
 | Tear it all down | `make tf-destroy` |
 
 ## GitHub Actions deploy
@@ -400,9 +400,11 @@ Actions tab.
   the deploy workflow now that migrations run on container start (no
   `az containerapp exec` from CI).
 
-Container Apps refreshes Key Vault references on every revision restart. To
-force an immediate refresh, restart the latest revision (the rotate command
-above does this).
+Container Apps resolves Key Vault references **only when a revision is
+created**, not on plain `revision restart`. A restarted replica reuses the
+secret values it captured at boot. To pick up a new Key Vault secret value,
+create a new revision (the rotate row above uses `--revision-suffix` for a
+no-image-change revision bump).
 
 ## Cost knobs
 
