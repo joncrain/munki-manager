@@ -92,7 +92,7 @@ export function DeviceCheckinsChart({
               const row = payload?.[0]?.payload as { date?: string } | undefined
               return row?.date ? format(parseISO(row.date), 'MMM d, yyyy') : ''
             }}
-            formatter={(value: number) => [value, 'Check-ins']}
+            formatter={(value) => [Number(value ?? 0), 'Check-ins']}
           />
           <Area
             type="monotone"

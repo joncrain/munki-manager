@@ -106,7 +106,7 @@ export function SoftwareInstallTimelineChart({
               const row = payload?.[0]?.payload as { date?: string } | undefined
               return row?.date ? format(parseISO(row.date), 'MMM d, yyyy') : ''
             }}
-            formatter={(value: number) => [value, 'Events']}
+            formatter={(value) => [Number(value ?? 0), 'Events']}
           />
           <Area
             type="monotone"

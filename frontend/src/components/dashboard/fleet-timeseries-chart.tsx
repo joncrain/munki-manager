@@ -89,7 +89,7 @@ export function FleetTimeseriesChart({
               const row = payload?.[0]?.payload as { date?: string } | undefined
               return row?.date ? format(parseISO(row.date), 'MMM d, yyyy') : ''
             }}
-            formatter={(value: number) => [value, seriesLabel]}
+            formatter={(value) => [Number(value ?? 0), seriesLabel]}
           />
           <Area
             type="monotone"

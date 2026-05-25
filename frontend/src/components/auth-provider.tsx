@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import {
   createContext,
   useCallback,
@@ -8,7 +9,10 @@ import {
 } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { redirectToLoginForExpiredAuth } from '@/lib/auth-redirect'
+import {
+  redirectToLoginForExpiredAuth,
+  registerAuthRedirectCacheBuster,
+} from '@/lib/auth-redirect'
 import { PAGE_KEYS } from '@/lib/page-keys'
 import { publicApiBaseUrl } from '@/lib/public-api-base'
 
@@ -59,6 +63,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [registrationOpen, setRegistrationOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  // Hand the QueryClient to the (non-React) auth-redirect helper so it can
+  // clear cached data the instant we detect an expired token. Without this
+  // a slow-cold-DB 401 can fire after the user already started clicking
+  // around on stale-but-valid-looking cached responses.
+  useEffect(() => {
+    registerAuthRedirectCacheBuster(queryClient)
+  }, [queryClient])
 
   const authMode = useMemo(
     () => me?.auth_mode ?? serverAuthMode ?? null,
@@ -86,6 +99,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* preserve serverAuthMode */
       }
 
+      // Fast-path: when auth is required, no token in localStorage means we
+      // already know /auth/me will 401. Bounce immediately rather than
+      // waiting on the network round-trip — on a cold ACA database this
+      // saves the user 5-10 seconds of clicking through stale cache.
+      const token =
+        typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      if (modeFromConfig && modeFromConfig !== 'disabled' && !token) {
+        setMe(null)
+        redirectToLoginForExpiredAuth()
+        return
+      }
+
       const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
         headers: { ...authHeaders() },
       })
@@ -94,7 +119,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Skip the redirect when the server is in disabled-auth mode (it
         // shouldn't 401 in that mode, but defend against drift). Otherwise
         // delegate to the shared helper so the path-allowlist + coalescing
-        // matches the rest of the app.
+        // matches the rest of the app — this also clears the React Query
+        // cache before navigating so stale data doesn't render mid-redirect.
         if (modeFromConfig !== 'disabled') {
           redirectToLoginForExpiredAuth()
         }
@@ -117,9 +143,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem('token')
+    // Same reasoning as the 401 path: drop cached data so a brief render
+    // between setMe(null) and navigate() can't leak the previous user's
+    // dashboard / lists. cancelQueries() returns a Promise we don't await
+    // — navigation will tear down components either way, but a stray
+    // late-resolving query before unmount would otherwise repopulate the
+    // store on top of the cleared one.
+    void queryClient.cancelQueries()
+    queryClient.clear()
     setMe(null)
     navigate('/login')
-  }, [navigate])
+  }, [navigate, queryClient])
 
   const canRead = useCallback(
     (pageKey: string) => {

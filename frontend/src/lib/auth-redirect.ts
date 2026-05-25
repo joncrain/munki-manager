@@ -20,6 +20,12 @@
  *     fetches that all expire at once should result in exactly one redirect.
  *   - No-ops on public routes (login / register / OIDC callback / device
  *     enrollment), so a 401 during the login attempt itself doesn't loop.
+ *   - Drops the React Query cache *before* navigating so concurrent in-flight
+ *     queries that haven't 401'd yet (slow DB cold start, parallel fetches)
+ *     can't render their last-good payload between the redirect call and
+ *     the actual page navigation. The full reload also dumps the cache, but
+ *     the user can click around in the few hundred milliseconds before
+ *     unload — and on Container Apps with a cold DB that window stretches.
  */
 
 const PUBLIC_PATH_PREFIXES = [
@@ -30,6 +36,19 @@ const PUBLIC_PATH_PREFIXES = [
 ] as const
 
 let redirectInFlight = false
+
+// Set once at app boot by AuthProvider. Typed as a minimal subset so this
+// module doesn't depend on @tanstack/react-query (keeps test imports cheap).
+type CacheBuster = {
+  cancelQueries: () => Promise<void>
+  clear: () => void
+}
+let cacheBuster: CacheBuster | null = null
+
+/** Called once by AuthProvider after QueryClient is available. */
+export function registerAuthRedirectCacheBuster(client: CacheBuster): void {
+  cacheBuster = client
+}
 
 export function isPublicAuthPath(pathname: string | null | undefined): boolean {
   if (!pathname) return false
@@ -63,6 +82,18 @@ export function redirectToLoginForExpiredAuth(): boolean {
     localStorage.removeItem('token')
   } catch {
     /* private mode / storage disabled */
+  }
+
+  // Cancel pending queries and drop the cache *before* navigating. Any
+  // component already mounted on this paint will not get to render again
+  // with the previous cached payload because the navigate-away will
+  // unmount them; but a query that resolves between this call and the
+  // browser starting the navigation could still update state and trigger
+  // a render. Clearing here makes that render show "loading" instead of
+  // "stale data the user can interact with".
+  if (cacheBuster) {
+    void cacheBuster.cancelQueries()
+    cacheBuster.clear()
   }
 
   const next = `${window.location.pathname}${window.location.search}`
