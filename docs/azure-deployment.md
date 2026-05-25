@@ -64,6 +64,34 @@ local_runner_token = "<openssl rand -hex 32>"
 
 The `terraform.tfvars` file is gitignored — do not commit it.
 
+### Picking a `github_token`
+
+Munki Manager hits two distinct sets of GitHub repos with this token:
+
+1. **Your own munki-recipes repo** — to dispatch the AutoPkg cloud-runner
+   workflow (`POST /repos/{owner}/{repo}/actions/workflows/{file}/dispatches`).
+2. **The public `autopkg/*` org and other recipe-author repos** — to read
+   recipe contents for trust verification.
+
+The simplest token that covers both is a **classic PAT** with these scopes:
+
+- `public_repo` (read public repo contents — covers `autopkg/*` and any
+  other public recipe sources)
+- `workflow` (dispatch your own workflow)
+- `repo` instead of `public_repo` if your `github_repo` is **private**
+
+Generate it at <https://github.com/settings/tokens> → "Generate new token
+(classic)". Set "Expiration" to whatever your security policy allows; the
+token is stored in Key Vault and only the backend container ever reads it.
+
+A **fine-grained PAT** also works for the dispatch half (Contents: Read,
+Actions: Read & write on your repo) but **the `autopkg` organization
+forbids fine-grained PATs whose lifetime is greater than 366 days** —
+anything longer returns HTTP 403 with a clear policy message and the
+trust-verification calls to `autopkg/*` will fail. If you want fine-grained,
+keep the lifetime ≤ 366 days and grant "Public Repositories: Read-only"
+so the token can read `autopkg/*` and other recipe-author repos.
+
 ## 2. Bootstrap apply (everything except the custom domain)
 
 ```sh
@@ -273,6 +301,7 @@ quicker.)
 | Tail frontend logs | `make logs-frontend` |
 | Open psql against prod | `make psql` |
 | Rotate a secret | `az keyvault secret set --vault-name $(make -s tf-output | awk -F\" '/key_vault_name/{print $2}') --name app-secret-key --value <new>` then `az containerapp revision restart -g rg-munkimanager -n ca-munkimanager-backend --revision $(az containerapp revision list -g rg-munkimanager -n ca-munkimanager-backend --query "[0].name" -o tsv)` |
+| Rotate the GitHub PAT | Same `az keyvault secret set` command, but `--name github-token`. After the restart, sanity-check the budget with `curl -H "Authorization: Bearer $TOK" https://api.github.com/rate_limit` — `core.limit` should be 5000 (authenticated), not 60 (anonymous). |
 | Tear it all down | `make tf-destroy` |
 
 ## GitHub Actions deploy

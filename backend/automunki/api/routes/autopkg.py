@@ -117,6 +117,7 @@ from automunki.services.storage import (
     sanitize_relative_path,
 )
 from automunki.services.trust import (
+    GitHubForbiddenError,
     GitHubRateLimitError,
     build_location_cache,
     build_override_data,
@@ -1321,6 +1322,15 @@ async def import_recipe_override(
                 status_code=503,
                 detail="GitHub API rate limit exceeded. Try again later or import with refresh_trust=false.",
             ) from None
+        except GitHubForbiddenError as exc:
+            msg = exc.github_message or "forbidden"
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"GitHub denied access: {msg}. Check that the configured "
+                    "GITHUB_TOKEN has read access to the recipe repos."
+                ),
+            ) from None
         if new_trust.get("parent_recipes"):
             trust_info = new_trust
             trust_status = TrustStatus.verified.value
@@ -1498,6 +1508,15 @@ async def update_recipe_trust(
             status_code=503,
             detail="GitHub API rate limit exceeded. Please try again later.",
         )
+    except GitHubForbiddenError as exc:
+        msg = exc.github_message or "forbidden"
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"GitHub denied access while refreshing trust: {msg}. Check "
+                "that the configured GITHUB_TOKEN has read access to the recipe repos."
+            ),
+        ) from None
 
     if not new_trust.get("parent_recipes"):
         raise HTTPException(
@@ -1669,6 +1688,11 @@ async def resolve_trust_commit(
         raise HTTPException(
             status_code=429,
             detail="GitHub API rate limit exceeded. Try again later.",
+        ) from exc
+    except GitHubForbiddenError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"GitHub denied access: {exc.github_message or 'forbidden'}.",
         ) from exc
 
     if not sha:
@@ -1857,6 +1881,11 @@ async def add_recipe_override(
             status_code=503,
             detail="GitHub API rate limit exceeded. Please try again later.",
         )
+    except GitHubForbiddenError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"GitHub denied access: {exc.github_message or 'forbidden'}.",
+        ) from None
 
     if not recipe_content:
         raise HTTPException(
@@ -1878,6 +1907,11 @@ async def add_recipe_override(
             status_code=503,
             detail="GitHub API rate limit exceeded while building override. Please try again later.",
         )
+    except GitHubForbiddenError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"GitHub denied access while building override: {exc.github_message or 'forbidden'}.",
+        ) from None
 
     trust_info = override_info.get("trust_info", {})
     input_variables = override_info.get("input_variables", {})

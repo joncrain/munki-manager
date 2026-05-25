@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import plistlib
 import re
 from dataclasses import dataclass, field
@@ -113,6 +114,61 @@ class GitHubRateLimitError(Exception):
         )
 
 
+class GitHubForbiddenError(Exception):
+    """Raised when GitHub returns 403 for a non-rate-limit reason.
+
+    Common causes (each surfaces a distinct ``message`` from GitHub):
+    - The PAT lacks the required permission (e.g. fine-grained PAT without
+      "Public Repositories: Read-only" hitting ``orgs/*`` endpoints).
+    - The org policy forbids the PAT type (the ``autopkg`` org refuses
+      fine-grained PATs with lifetime > 366 days, for example).
+    - SAML SSO not authorized on a private org.
+
+    Surfacing this distinctly (instead of ``GitHubRateLimitError``) makes the
+    backend logs and the UI show the real reason, so operators can fix the
+    PAT instead of waiting for a phantom rate-limit window to reset.
+    """
+
+    def __init__(self, message: str = "", repo: str | None = None):
+        self.repo = repo
+        self.github_message = message
+        full = (
+            f"GitHub returned 403 forbidden for {repo}: {message}"
+            if repo
+            else f"GitHub returned 403 forbidden: {message}"
+        )
+        super().__init__(full)
+
+
+def _classify_403(resp) -> Exception:
+    """Decide whether a 403 response is a real rate-limit hit or just forbidden.
+
+    GitHub overloads HTTP 403 for two very different conditions, and they need
+    different operator responses:
+
+    - Rate limit: ``X-RateLimit-Remaining: 0`` (or the response body contains
+      "rate limit"). Wait until the reset time and retry.
+    - Anything else: token missing scope, org policy block, SAML, etc.
+      Operator must fix the PAT.
+
+    Returning the exception (instead of raising) lets callers decide whether
+    to raise or log-and-degrade.
+    """
+    reset_at = resp.headers.get("x-ratelimit-reset")
+    remaining = resp.headers.get("x-ratelimit-remaining")
+    body = resp.text or ""
+    if remaining == "0" or "rate limit" in body.lower():
+        return GitHubRateLimitError(reset_at=int(reset_at) if reset_at else None)
+    message = ""
+    try:
+        data = json.loads(body)
+        if isinstance(data, dict):
+            message = str(data.get("message", "")).strip()
+    except (ValueError, TypeError):
+        message = body.strip()[:300]
+    return GitHubForbiddenError(message=message)
+
+
 @dataclass
 class TrustVerificationResult:
     status: str  # "verified" | "failed" | "error"
@@ -136,18 +192,19 @@ async def _fetch_file_bytes(repo: str, path: str, *, raise_on_rate_limit: bool =
         return None
 
     if resp.status_code == 403:
-        reset_at = resp.headers.get("x-ratelimit-reset")
-        remaining = resp.headers.get("x-ratelimit-remaining")
-        if remaining == "0" or "rate limit" in resp.text.lower():
-            logger.warning(
-                "github_rate_limit_hit",
-                repo=repo,
-                path=path,
-                reset_at=reset_at,
-            )
+        err = _classify_403(resp)
+        if isinstance(err, GitHubRateLimitError):
+            logger.warning("github_rate_limit_hit", repo=repo, path=path, reset_at=err.reset_at)
             if raise_on_rate_limit:
-                raise GitHubRateLimitError(reset_at=int(reset_at) if reset_at else None)
+                raise err
             return None
+        logger.warning(
+            "github_forbidden",
+            repo=repo,
+            path=path,
+            github_message=err.github_message,
+        )
+        return None
     if resp.status_code != 200:
         logger.debug(
             "github_fetch_failed",
@@ -196,7 +253,11 @@ async def _repo_default_branch(repo: str) -> str | None:
             headers=_github_headers(),
         )
         if resp.status_code == 403:
-            raise GitHubRateLimitError()
+            err = _classify_403(resp)
+            if isinstance(err, GitHubRateLimitError):
+                raise err
+            logger.warning("github_forbidden", repo=repo, github_message=err.github_message)
+            raise err
         if resp.status_code == 200:
             return resp.json().get("default_branch", "main")
     return None
@@ -210,7 +271,11 @@ async def _repo_tree(repo: str, branch: str) -> list[dict] | None:
             headers=_github_headers(),
         )
         if ref_resp.status_code == 403:
-            raise GitHubRateLimitError()
+            err = _classify_403(ref_resp)
+            if isinstance(err, GitHubRateLimitError):
+                raise err
+            logger.warning("github_forbidden", repo=repo, branch=branch, github_message=err.github_message)
+            raise err
         if ref_resp.status_code != 200:
             return None
         sha = ref_resp.json()["object"]["sha"]
@@ -220,7 +285,11 @@ async def _repo_tree(repo: str, branch: str) -> list[dict] | None:
             params={"recursive": "1"},
         )
         if tree_resp.status_code == 403:
-            raise GitHubRateLimitError()
+            err = _classify_403(tree_resp)
+            if isinstance(err, GitHubRateLimitError):
+                raise err
+            logger.warning("github_forbidden", repo=repo, branch=branch, github_message=err.github_message)
+            raise err
         if tree_resp.status_code != 200:
             return None
         return tree_resp.json().get("tree", [])
@@ -638,6 +707,14 @@ async def verify_trust(
             status="error",
             error="GitHub API rate limit exceeded. Try again later.",
         )
+    except GitHubForbiddenError as exc:
+        # Surface the actual GitHub message (PAT lifetime, missing scope, SAML,
+        # etc.) instead of the misleading "rate limit" we used to return.
+        msg = exc.github_message or "Permission denied"
+        return TrustVerificationResult(
+            status="error",
+            error=f"GitHub denied access: {msg}",
+        )
     except Exception as exc:
         logger.exception("trust_verify_error")
         return TrustVerificationResult(
@@ -929,12 +1006,19 @@ async def _fetch_file_bytes_at_ref(
         return None
 
     if resp.status_code == 403:
-        reset_at = resp.headers.get("x-ratelimit-reset")
-        remaining = resp.headers.get("x-ratelimit-remaining")
-        if remaining == "0" or "rate limit" in resp.text.lower():
+        err = _classify_403(resp)
+        if isinstance(err, GitHubRateLimitError):
             if raise_on_rate_limit:
-                raise GitHubRateLimitError(reset_at=int(reset_at) if reset_at else None)
+                raise err
             return None
+        logger.warning(
+            "github_forbidden",
+            repo=repo,
+            path=path,
+            ref=ref,
+            github_message=err.github_message,
+        )
+        return None
     if resp.status_code != 200:
         return None
     data = resp.json()
@@ -978,10 +1062,16 @@ async def resolve_introducing_commit(
             params={"path": path, "per_page": per_page},
         )
         if list_resp.status_code == 403:
-            reset_at = list_resp.headers.get("x-ratelimit-reset")
-            remaining = list_resp.headers.get("x-ratelimit-remaining")
-            if remaining == "0" or "rate limit" in list_resp.text.lower():
-                raise GitHubRateLimitError(reset_at=int(reset_at) if reset_at else None)
+            err = _classify_403(list_resp)
+            if isinstance(err, GitHubRateLimitError):
+                raise err
+            logger.warning(
+                "github_forbidden",
+                repo=repo,
+                path=path,
+                github_message=err.github_message,
+            )
+            return None
         if list_resp.status_code != 200:
             logger.warning(
                 "github_list_commits_failed",

@@ -74,6 +74,11 @@ async def verify_trust_live_for_recipes(
         if vr.error and "rate limit" in vr.error.lower():
             rate_limited = True
             break
+        # GitHub returned 403 for a non-rate-limit reason (PAT scope, org policy,
+        # SAML, etc.). Same outcome as rate-limit for the loop: every subsequent
+        # recipe will hit the same wall, so stop now and surface what we have.
+        if vr.error and "github denied access" in vr.error.lower():
+            break
     return rows, rate_limited
 
 
