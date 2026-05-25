@@ -341,7 +341,7 @@ export function DataTable<TData, TValue>({
       </div>
 
       {showFooter && (
-        <div className="flex items-center justify-between px-2 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-2 py-3">
           <div
             className="text-sm text-muted-foreground"
             style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -351,7 +351,7 @@ export function DataTable<TData, TValue>({
               : `${data.length} rows`}
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {onPageSizeChange && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Rows</span>
@@ -383,7 +383,10 @@ export function DataTable<TData, TValue>({
                   disabled={page <= 1}
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  Previous
+                  {/* The "Previous"/"Next" labels eat tap-target room on
+                      narrow screens; keep them at sm+ but rely on the chevron
+                      glyph + aria-label below that. */}
+                  <span className="hidden sm:inline">Previous</span>
                 </Button>
                 <span
                   className="text-sm text-muted-foreground"
@@ -398,7 +401,7 @@ export function DataTable<TData, TValue>({
                   onClick={() => onPageChange(page + 1)}
                   disabled={page >= pageCount}
                 >
-                  Next
+                  <span className="hidden sm:inline">Next</span>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>

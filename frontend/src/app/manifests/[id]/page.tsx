@@ -405,7 +405,7 @@ export default function ManifestDetailPage() {
           <div className="flex flex-col gap-1">
             <h1
               className={cn(
-                'inline-flex min-w-0 max-w-full items-center gap-1.5 text-3xl font-bold text-pretty',
+                'inline-flex min-w-0 max-w-full items-center gap-1.5 text-2xl font-bold text-pretty sm:text-3xl',
                 munkiAccents.manifests.pageTitle,
               )}
             >

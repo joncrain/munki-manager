@@ -701,7 +701,7 @@ function RolePermissionsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[min(90vh,44rem)] min-h-0 w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        className="flex max-h-[min(90dvh,44rem)] min-h-0 w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[min(85vh,44rem)] sm:max-w-2xl"
         showCloseButton
       >
         <div className="shrink-0 border-b bg-muted/30 px-6 py-5 pr-14">
@@ -757,11 +757,12 @@ function RolePermissionsDialog({
               </div>
             </div>
             <div className="shrink-0 border-t bg-muted/20 px-6 py-4">
-              <DialogFooter className="flex w-full flex-row justify-end gap-2 sm:justify-end">
+              <DialogFooter className="gap-2 sm:justify-end">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => onOpenChange(false)}
+                  className="w-full sm:w-auto"
                 >
                   Cancel
                 </Button>
@@ -769,6 +770,7 @@ function RolePermissionsDialog({
                   type="button"
                   disabled={pending}
                   onClick={() => void savePerms()}
+                  className="w-full sm:w-auto"
                 >
                   {pending ? (
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

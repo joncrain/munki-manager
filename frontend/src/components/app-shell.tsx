@@ -40,7 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
         <main className="min-w-0 flex-1 overflow-auto">
           <Suspense>
-            <div className="container mx-auto min-w-0 max-w-full p-6">
+            <div className="container mx-auto min-w-0 max-w-full p-4 sm:p-6">
               {children}
             </div>
           </Suspense>

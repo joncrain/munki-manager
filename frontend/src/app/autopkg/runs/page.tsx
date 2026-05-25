@@ -290,47 +290,51 @@ export default function AutoPkgRunsPage() {
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <PageHeading icon={Play} accent="autopkg" title="AutoPkg Runs" />
-        <TriggerRunDialog
-          canTrigger={canTriggerRuns}
-          onTrigger={onTriggerRunWithTrust}
-          isPending={runActionPending}
-          trustVerifying={trustVerifying}
-        />
-
-        {trustVerifyIssue ? (
-          <TrustVerifyFailureDialog
-            open
-            onOpenChange={(o) => {
-              if (!o) setTrustVerifyIssue(null)
-            }}
-            verify={trustVerifyIssue.verify}
-            isContinuing={trustContinuePending}
-            onStop={() => setTrustVerifyIssue(null)}
-            onContinue={() => {
-              const names = trustVerifyIssue.verify.results
-                .filter((r) => r.status === 'verified')
-                .map((r) => r.name)
-              if (names.length === 0) {
-                toast.error('No recipes left to run after trust check')
-                setTrustVerifyIssue(null)
-                return
-              }
-              setTrustContinuePending(true)
-              triggerMutation.mutate(
-                { recipeNames: names, runner: trustVerifyIssue.runner },
-                {
-                  onSettled: () => {
-                    setTrustContinuePending(false)
-                    setTrustVerifyIssue(null)
-                  },
-                },
-              )
-            }}
+      <PageHeading
+        icon={Play}
+        accent="autopkg"
+        title="AutoPkg Runs"
+        actions={
+          <TriggerRunDialog
+            canTrigger={canTriggerRuns}
+            onTrigger={onTriggerRunWithTrust}
+            isPending={runActionPending}
+            trustVerifying={trustVerifying}
           />
-        ) : null}
-      </div>
+        }
+      />
+
+      {trustVerifyIssue ? (
+        <TrustVerifyFailureDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setTrustVerifyIssue(null)
+          }}
+          verify={trustVerifyIssue.verify}
+          isContinuing={trustContinuePending}
+          onStop={() => setTrustVerifyIssue(null)}
+          onContinue={() => {
+            const names = trustVerifyIssue.verify.results
+              .filter((r) => r.status === 'verified')
+              .map((r) => r.name)
+            if (names.length === 0) {
+              toast.error('No recipes left to run after trust check')
+              setTrustVerifyIssue(null)
+              return
+            }
+            setTrustContinuePending(true)
+            triggerMutation.mutate(
+              { recipeNames: names, runner: trustVerifyIssue.runner },
+              {
+                onSettled: () => {
+                  setTrustContinuePending(false)
+                  setTrustVerifyIssue(null)
+                },
+              },
+            )
+          }}
+        />
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <Select
@@ -647,8 +651,8 @@ function TriggerRunDialog({
           Trigger Run
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[80vh] sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-h-[85vh] sm:max-w-lg">
+        <DialogHeader className="shrink-0 border-b px-6 pt-6 pr-14 pb-4">
           <DialogTitle>Trigger AutoPkg Run</DialogTitle>
           <DialogDescription>
             Select specific recipes or run all enabled overrides. Trust is
@@ -657,7 +661,7 @@ function TriggerRunDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 py-4">
           <div className="grid gap-2">
             <Label htmlFor="autopkg-runner">Runner</Label>
             <Select
@@ -698,7 +702,7 @@ function TriggerRunDialog({
             />
           </div>
 
-          <div className="flex items-center justify-between px-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1">
             <div
               role="option"
               aria-selected={
@@ -741,7 +745,11 @@ function TriggerRunDialog({
             )}
           </div>
 
-          <div className="max-h-[40vh] space-y-1 overflow-y-auto rounded-md border p-2">
+          {/* The recipe list inside an already-scrollable parent: cap height
+              so it doesn't push everything else out of view, but let it
+              breathe when there's vertical room (taller on desktop, shorter
+              on mobile so the runner picker + footer stay visible). */}
+          <div className="min-h-[8rem] flex-1 space-y-1 overflow-y-auto rounded-md border p-2">
             {filtered.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">
                 No enabled recipes found.
@@ -768,26 +776,33 @@ function TriggerRunDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
+        <DialogFooter className="shrink-0 border-t bg-background px-6 py-4 sm:rounded-b-lg">
+          <Button
+            variant="outline"
+            onClick={() => setOpen(false)}
+            className="w-full sm:w-auto"
+          >
             Cancel
           </Button>
           <Button
             onClick={() => void handleTrigger()}
             disabled={isPending || trustVerifying}
+            className="w-full sm:w-auto"
           >
             {trustVerifying || isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Play className="h-4 w-4" />
             )}
-            {trustVerifying
-              ? 'Verifying trust…'
-              : isPending
-                ? 'Triggering...'
-                : selected.size > 0
-                  ? `Run ${selected.size} Recipe${selected.size > 1 ? 's' : ''}`
-                  : 'Run All Enabled'}
+            <span className="truncate">
+              {trustVerifying
+                ? 'Verifying trust…'
+                : isPending
+                  ? 'Triggering…'
+                  : selected.size > 0
+                    ? `Run ${selected.size} recipe${selected.size > 1 ? 's' : ''}`
+                    : 'Run all enabled'}
+            </span>
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -806,105 +806,105 @@ export default function RecipesPage() {
 
   return (
     <div className="flex h-[calc(100vh-3rem)] min-w-0 w-full max-w-full flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <PageHeading
-          icon={BookOpen}
-          accent="autopkg"
-          title="Recipe Management"
-          afterTitle={
-            canSeeApprovals && pendingTrustQueueCount > 0 ? (
-              <Badge
-                asChild
-                variant="default"
-                className="shrink-0 bg-gruvbox-yellow text-primary-foreground hover:bg-gruvbox-yellow/90"
+      <PageHeading
+        icon={BookOpen}
+        accent="autopkg"
+        title="Recipe Management"
+        afterTitle={
+          canSeeApprovals && pendingTrustQueueCount > 0 ? (
+            <Badge
+              asChild
+              variant="default"
+              className="shrink-0 bg-gruvbox-yellow text-primary-foreground hover:bg-gruvbox-yellow/90"
+            >
+              <Link
+                to="/approvals"
+                className="inline-flex items-center gap-1.5"
+                title="Open Approvals to review trust changes"
               >
-                <Link
-                  to="/approvals"
-                  className="inline-flex items-center gap-1.5"
-                  title="Open Approvals to review trust changes"
+                <ShieldAlert className="size-3.5" aria-hidden />
+                {pendingTrustQueueCount > 99 ? '99+' : pendingTrustQueueCount}{' '}
+                pending approval
+                {pendingTrustQueueCount === 1 ? '' : 's'}
+              </Link>
+            </Badge>
+          ) : null
+        }
+        actions={
+          <>
+            {canRun && selectedRecipes.length > 0 ? (
+              <>
+                <Button
+                  size="sm"
+                  disabled={runActionPending}
+                  onClick={() =>
+                    setQuickRun({ mode: 'selected', recipes: selectedRecipes })
+                  }
                 >
-                  <ShieldAlert className="size-3.5" aria-hidden />
-                  {pendingTrustQueueCount > 99 ? '99+' : pendingTrustQueueCount}{' '}
-                  pending approval
-                  {pendingTrustQueueCount === 1 ? '' : 's'}
-                </Link>
-              </Badge>
-            ) : null
-          }
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          {canRun && selectedRecipes.length > 0 ? (
-            <>
+                  {pendingRunSelectedList ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  Run selected ({selectedRecipes.length})
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={runActionPending}
+                  onClick={() => setRowSelection({})}
+                >
+                  Clear selection
+                </Button>
+              </>
+            ) : canRun ? (
               <Button
                 size="sm"
                 disabled={runActionPending}
-                onClick={() =>
-                  setQuickRun({ mode: 'selected', recipes: selectedRecipes })
-                }
+                onClick={() => setQuickRun({ mode: 'all' })}
               >
-                {pendingRunSelectedList ? (
+                {pendingRunAll ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Play className="h-4 w-4" />
                 )}
-                Run selected ({selectedRecipes.length})
+                Run all
               </Button>
+            ) : null}
+            {canVerifyAllRepos ? (
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                disabled={runActionPending}
-                onClick={() => setRowSelection({})}
+                disabled={verifyAllMutation.isPending}
+                onClick={() => verifyAllMutation.mutate()}
               >
-                Clear selection
+                {verifyAllMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4" />
+                )}
+                Verify All
               </Button>
-            </>
-          ) : canRun ? (
-            <Button
-              size="sm"
-              disabled={runActionPending}
-              onClick={() => setQuickRun({ mode: 'all' })}
-            >
-              {pendingRunAll ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
-              Run all
+            ) : null}
+            <Button variant="outline" asChild>
+              <Link to="/autopkg/discover">
+                <Compass className="h-4 w-4" />
+                Discover
+              </Link>
             </Button>
-          ) : null}
-          {canVerifyAllRepos ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={verifyAllMutation.isPending}
-              onClick={() => verifyAllMutation.mutate()}
-            >
-              {verifyAllMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ShieldCheck className="h-4 w-4" />
-              )}
-              Verify All
-            </Button>
-          ) : null}
-          <Button variant="outline" asChild>
-            <Link to="/autopkg/discover">
-              <Compass className="h-4 w-4" />
-              Discover
-            </Link>
-          </Button>
-          {canEditRecipes ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setImportOpen(true)}
-            >
-              <FileUp className="h-4 w-4" />
-              Import
-            </Button>
-          ) : null}
-        </div>
-      </div>
+            {canEditRecipes ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImportOpen(true)}
+              >
+                <FileUp className="h-4 w-4" />
+                Import
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       <div className="flex w-full flex-wrap items-center gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
@@ -1065,8 +1065,8 @@ export default function RecipesPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-[1200px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-h-[85vh] sm:max-w-[1200px]">
+          <DialogHeader className="shrink-0 border-b px-6 pt-6 pr-14 pb-4">
             <DialogTitle>Import existing override</DialogTitle>
             <DialogDescription>
               Paste XML plist text, YAML, JSON, or base64-encoded binary plist
@@ -1079,7 +1079,7 @@ export default function RecipesPage() {
               skipped for batch imports).
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="import-override-file">File (optional)</Label>
               <Input
@@ -1195,8 +1195,12 @@ export default function RecipesPage() {
               later).
             </p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setImportOpen(false)}>
+          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:rounded-b-lg">
+            <Button
+              variant="outline"
+              onClick={() => setImportOpen(false)}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </Button>
             <Button
@@ -1205,6 +1209,7 @@ export default function RecipesPage() {
                   ? importBatchMutation.isPending
                   : !importContent.trim() || importOverrideMutation.isPending
               }
+              className="w-full sm:w-auto"
               onClick={() => {
                 if (importBatchItems && importBatchItems.length > 0) {
                   importBatchMutation.mutate({

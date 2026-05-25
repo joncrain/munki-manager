@@ -220,7 +220,7 @@ export default function ReportingDevicePage() {
             <div>
               <h1
                 className={cn(
-                  'text-3xl font-bold tracking-tight text-pretty',
+                  'wrap-break-word text-2xl font-bold tracking-tight text-pretty sm:text-3xl',
                   munkiAccents.reporting.pageTitle,
                 )}
               >

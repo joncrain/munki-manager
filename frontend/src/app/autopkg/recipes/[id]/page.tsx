@@ -134,12 +134,12 @@ export default function RecipeOverrideEditPage() {
           />
           <div className={cn('min-w-0', munkiAccents.autopkg.pageTitle)}>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-3xl font-bold text-pretty truncate">
+              <h1 className="truncate text-2xl font-bold text-pretty sm:text-3xl">
                 {meta?.displayName ?? recipe.name}
               </h1>
               <RecipeTrustStatusBadge status={recipe.trust_status} />
             </div>
-            <p className="text-muted-foreground font-mono text-sm truncate">
+            <p className="truncate font-mono text-xs text-muted-foreground sm:text-sm">
               {recipe.identifier}
             </p>
           </div>

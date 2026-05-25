@@ -153,8 +153,8 @@ export function SoftwareUploadDialog({
         }
       }}
     >
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-h-[85vh] sm:max-w-2xl">
+        <DialogHeader className="shrink-0 border-b px-6 pt-6 pr-14 pb-4">
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
             Upload software
@@ -167,7 +167,7 @@ export function SoftwareUploadDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 py-4">
           <div className="grid gap-2">
             <Label htmlFor={fileInputId}>Installer file</Label>
             <Input
@@ -344,12 +344,13 @@ export function SoftwareUploadDialog({
           )}
         </div>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:rounded-b-lg">
           <Button
             type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={submitting}
+            className="w-full sm:w-auto"
           >
             Cancel
           </Button>
@@ -357,6 +358,7 @@ export function SoftwareUploadDialog({
             type="button"
             onClick={onSubmit}
             disabled={submitting || !file}
+            className="w-full sm:w-auto"
           >
             {submitting ? (
               <>

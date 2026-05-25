@@ -528,8 +528,8 @@ export default function SoftwareDetailPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <SoftwareIcon
             name={pkg.name}
             displayName={pkg.display_name}
@@ -537,16 +537,16 @@ export default function SoftwareDetailPage() {
             size="lg"
             cacheRevision={iconRevision}
           />
-          <div className={cn(munkiAccents.software.pageTitle)}>
-            <h1 className="text-3xl font-bold text-pretty">
+          <div className={cn('min-w-0', munkiAccents.software.pageTitle)}>
+            <h1 className="wrap-break-word text-2xl font-bold text-pretty sm:text-3xl">
               {pkg.display_name || pkg.name}
             </h1>
-            <p className="text-muted-foreground">
+            <p className="wrap-break-word text-sm text-muted-foreground sm:text-base">
               {pkg.name} &mdash; Version {pkg.version}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
           {canMutateSoftware && effectiveEditing ? (
             <>
               <Button

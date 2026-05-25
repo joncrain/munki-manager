@@ -340,19 +340,19 @@ export default function SoftwarePage() {
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <PageHeading
-          icon={Package}
-          accent="software"
-          title="Software Catalog"
-        />
-        {canEditSoftware && (
-          <Button variant="outline" onClick={() => setUploadDialogOpen(true)}>
-            <Upload className="h-4 w-4" />
-            Upload software
-          </Button>
-        )}
-      </div>
+      <PageHeading
+        icon={Package}
+        accent="software"
+        title="Software Catalog"
+        actions={
+          canEditSoftware && (
+            <Button variant="outline" onClick={() => setUploadDialogOpen(true)}>
+              <Upload className="h-4 w-4" />
+              Upload software
+            </Button>
+          )
+        }
+      />
 
       <SoftwareUploadDialog
         open={uploadDialogOpen}

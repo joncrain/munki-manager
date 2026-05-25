@@ -201,7 +201,7 @@ export default function AutoPkgSchedulesPage() {
         one replica if you run multiple API instances.
       </p>
 
-      <div className="rounded-md border">
+      <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -301,8 +301,8 @@ export default function AutoPkgSchedulesPage() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-h-[85vh] sm:max-w-lg">
+          <DialogHeader className="shrink-0 border-b px-6 pt-6 pr-14 pb-4">
             <DialogTitle>
               {editing ? 'Edit schedule' : 'New schedule'}
             </DialogTitle>
@@ -312,7 +312,7 @@ export default function AutoPkgSchedulesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-3">
+          <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-6 py-4">
             <div className="grid gap-2">
               <Label htmlFor="sch-name">Name</Label>
               <Input
@@ -494,11 +494,12 @@ export default function AutoPkgSchedulesPage() {
             ) : null}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:rounded-b-lg">
             <Button
               type="button"
               variant="outline"
               onClick={() => setDialogOpen(false)}
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>
@@ -506,6 +507,7 @@ export default function AutoPkgSchedulesPage() {
               type="button"
               disabled={saveMutation.isPending || !form.name.trim()}
               onClick={() => saveMutation.mutate()}
+              className="w-full sm:w-auto"
             >
               {saveMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

@@ -634,11 +634,11 @@ function RepoRecipesDialog({
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-h-[80vh] sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-h-[85vh] sm:max-w-2xl">
+        <DialogHeader className="shrink-0 border-b px-6 pt-6 pr-14 pb-4">
           <DialogTitle className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-gruvbox-blue" />
-            {repo.name}
+            <span className="truncate">{repo.name}</span>
           </DialogTitle>
           <DialogDescription>
             Munki recipes in this repo. Click + to add an override.
@@ -654,78 +654,80 @@ function RepoRecipesDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Filter recipes..."
-            value={recipeSearch}
-            onChange={(e) => setRecipeSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-6 py-4">
+          <div className="relative shrink-0">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Filter recipes..."
+              value={recipeSearch}
+              onChange={(e) => setRecipeSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
 
-        <div className="max-h-[50vh] space-y-1 overflow-y-auto rounded-md border p-2">
-          {!hasCachedRecipes && isLoading ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Scanning repo...
-            </div>
-          ) : recipesToShow.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No .munki.recipe files found.
-              {!hasCachedRecipes && " Try syncing this repo's recipes."}
-            </p>
-          ) : (
-            recipesToShow.map((recipe) => {
-              const alreadyAdded = existingIdentifiers.has(
-                recipe.identifier_guess,
-              )
-              return (
-                <div
-                  key={recipe.path}
-                  className="flex items-center justify-between rounded-md px-3 py-2 hover:bg-accent"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{recipe.name}</span>
-                      {alreadyAdded && (
-                        <Badge variant="secondary" className="text-xs">
-                          Added
-                        </Badge>
-                      )}
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-md border p-2">
+            {!hasCachedRecipes && isLoading ? (
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Scanning repo...
+              </div>
+            ) : recipesToShow.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No .munki.recipe files found.
+                {!hasCachedRecipes && " Try syncing this repo's recipes."}
+              </p>
+            ) : (
+              recipesToShow.map((recipe) => {
+                const alreadyAdded = existingIdentifiers.has(
+                  recipe.identifier_guess,
+                )
+                return (
+                  <div
+                    key={recipe.path}
+                    className="flex items-center justify-between rounded-md px-3 py-2 hover:bg-accent"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{recipe.name}</span>
+                        {alreadyAdded && (
+                          <Badge variant="secondary" className="text-xs">
+                            Added
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {recipe.path}
+                      </p>
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {recipe.path}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <a
-                      href={recipe.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                    {canAddRecipes ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={alreadyAdded || addMutation.isPending}
-                        aria-label={`Add override for ${recipe.name}`}
-                        onClick={() => addMutation.mutate(recipe)}
+                    <div className="flex shrink-0 items-center gap-2">
+                      <a
+                        href={recipe.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-foreground"
                       >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    ) : null}
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                      {canAddRecipes ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={alreadyAdded || addMutation.isPending}
+                          aria-label={`Add override for ${recipe.name}`}
+                          onClick={() => addMutation.mutate(recipe)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              )
-            })
-          )}
+                )
+              })
+            )}
+          </div>
         </div>
 
-        <DialogFooter className="flex-row items-center justify-between sm:justify-between">
+        <DialogFooter className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-6 py-4 sm:rounded-b-lg">
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
               {totalCount > 0 ? `${totalCount} recipes` : ''}
