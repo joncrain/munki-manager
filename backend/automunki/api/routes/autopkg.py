@@ -92,6 +92,10 @@ from automunki.services.autopkg import (
     sync_repo_recipes_to_cache,
     sync_repos_to_cache,
 )
+from automunki.services.autopkg_metadata_cache import (
+    expand_cache_entry,
+    normalize_cache_entry,
+)
 from automunki.services.autopkg_runs import (
     autopkg_run_to_read,
     create_and_dispatch_autopkg_run,
@@ -2084,9 +2088,27 @@ async def list_pending_approvals(
 
 @router.get("/metadata-cache", response_model=MetadataCacheRead)
 async def get_metadata_cache(
+    workspace: str | None = Query(
+        None,
+        description=(
+            "Runner workspace (e.g. ``/Users/runner/work/<owner>/<repo>`` or "
+            "``/opt/UnitySrc/joncrain/munki-manager``) used to expand the "
+            "``${WORKSPACE}`` placeholder in stored ``file_path`` entries. "
+            "Defaults to ``GITHUB_WORKSPACE`` on the client when omitted; "
+            "we leave the placeholder in place if not provided so the "
+            "client-side rescue in load_metadata_cache.py can finish the job."
+        ),
+    ),
     session: AsyncSession = Depends(get_session),
 ):
-    """Return the stored cloud-autopkg-runner metadata cache (one DB row per recipe)."""
+    """Return the stored cloud-autopkg-runner metadata cache (one DB row per recipe).
+
+    Stored ``file_path`` entries use a ``${WORKSPACE}`` placeholder so the
+    same JSON is portable across runners (GitHub-hosted, Mac mini, dev Mac).
+    Pass ``?workspace=...`` to expand the placeholder server-side; the
+    runner script also expands client-side so unauth callers / older
+    runners still get usable paths.
+    """
     result = await session.execute(select(AutoPkgMetadataCacheEntry))
     rows = result.scalars().all()
     if not rows:
@@ -2094,7 +2116,7 @@ async def get_metadata_cache(
     cache_data: dict = {}
     latest: datetime | None = None
     for r in rows:
-        cache_data[r.recipe_key] = r.entry
+        cache_data[r.recipe_key] = expand_cache_entry(r.entry, workspace) if workspace else r.entry
         if latest is None or r.updated_at > latest:
             latest = r.updated_at
     return MetadataCacheRead(cache_data=cache_data, updated_at=latest or datetime.now(UTC))
@@ -2105,14 +2127,24 @@ async def put_metadata_cache(
     data: MetadataCacheWrite,
     session: AsyncSession = Depends(get_session),
 ):
-    """Replace the metadata cache from the runner's aggregated JSON (per-recipe rows in DB)."""
+    """Replace the metadata cache from the runner's aggregated JSON (per-recipe rows in DB).
+
+    Normalizes ``file_path`` entries to ``${WORKSPACE}/AutoPkg/Cache/...``
+    on the way in so a Mac mini's ``/opt/UnitySrc/...`` paths and a
+    GitHub-hosted runner's ``/Users/runner/work/.../...`` paths converge to
+    the same canonical form in the DB. The next ``GET /metadata-cache``
+    expands them back to whichever runner is asking.
+    """
     await session.execute(delete(AutoPkgMetadataCacheEntry))
     now = datetime.now(UTC)
+    normalized: dict = {}
     for key, entry in data.cache_data.items():
         if isinstance(entry, dict):
-            session.add(AutoPkgMetadataCacheEntry(recipe_key=key, entry=entry, updated_at=now))
+            clean = normalize_cache_entry(entry)
+            session.add(AutoPkgMetadataCacheEntry(recipe_key=key, entry=clean, updated_at=now))
+            normalized[key] = clean
     await session.commit()
-    return MetadataCacheRead(cache_data=data.cache_data, updated_at=now)
+    return MetadataCacheRead(cache_data=normalized, updated_at=now)
 
 
 @router.delete("/metadata-cache")
