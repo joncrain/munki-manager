@@ -84,6 +84,12 @@ Generate it at <https://github.com/settings/tokens> → "Generate new token
 (classic)". Set "Expiration" to whatever your security policy allows; the
 token is stored in Key Vault and only the backend container ever reads it.
 
+> **Heads up:** the value of the `github-token` Key Vault secret is owned
+> by Terraform (`terraform/keyvault.tf`). If you rotate the PAT with
+> `az keyvault secret set` directly, the next `terraform apply` will
+> silently overwrite it with whatever is still in `terraform.tfvars`. Always
+> rotate by editing `terraform.tfvars` and running `make tf-apply`.
+
 A **fine-grained PAT** also works for the dispatch half (Contents: Read,
 Actions: Read & write on your repo) but **the `autopkg` organization
 forbids fine-grained PATs whose lifetime is greater than 366 days** —
@@ -300,8 +306,8 @@ quicker.)
 | Tail backend logs | `make logs-backend` |
 | Tail frontend logs | `make logs-frontend` |
 | Open psql against prod | `make psql` |
-| Rotate a secret | `az keyvault secret set --vault-name $(make -s tf-output | awk -F\" '/key_vault_name/{print $2}') --name app-secret-key --value <new>` then `az containerapp revision restart -g rg-munkimanager -n ca-munkimanager-backend --revision $(az containerapp revision list -g rg-munkimanager -n ca-munkimanager-backend --query "[0].name" -o tsv)` |
-| Rotate the GitHub PAT | Same `az keyvault secret set` command, but `--name github-token`. After the restart, sanity-check the budget with `curl -H "Authorization: Bearer $TOK" https://api.github.com/rate_limit` — `core.limit` should be 5000 (authenticated), not 60 (anonymous). |
+| Rotate a secret | Edit the corresponding variable in `terraform/terraform.tfvars` (e.g. `app_secret_key`, `github_token`, `postgres_admin_password`, `local_runner_token`), then `make tf-apply` to push it into Key Vault, then `az containerapp revision restart -g rg-munkimanager -n ca-munkimanager-backend --revision $(az containerapp revision list -g rg-munkimanager -n ca-munkimanager-backend --query "[?properties.active].name \| [0]" -o tsv)`. Direct `az keyvault secret set` writes get overwritten the next time anyone runs `terraform apply` because `terraform/keyvault.tf` owns the secret value. |
+| Rotate the GitHub PAT | Update `github_token` in `terraform.tfvars` to the new classic PAT, `make tf-apply`, then restart the backend revision (command above). Sanity-check the budget with `curl -H "Authorization: Bearer $TOK" https://api.github.com/rate_limit` — `core.limit` should be 5000 (authenticated). For a classic PAT also confirm it can read `autopkg/*`: `curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $TOK" https://api.github.com/repos/autopkg/recipes` should return `200`. |
 | Tear it all down | `make tf-destroy` |
 
 ## GitHub Actions deploy
