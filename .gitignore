@@ -23,6 +23,8 @@ agent/payload/
 .venv/
 metadata_cache_response.json
 infra/
+# Legacy on-disk avatar dir. Avatars now live in user.avatar_data (Postgres);
+# kept gitignored so any old uploads on a developer Mac don't get committed.
 backend/data/user-avatars/
 .pytest_cache/
 icons/*

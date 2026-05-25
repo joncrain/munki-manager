@@ -1,8 +1,10 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from automunki.api.deps import get_session
 from automunki.api.routes.oidc import router as oidc_router
@@ -15,12 +17,7 @@ from automunki.schemas.auth_config import AuthConfigResponse
 from automunki.schemas.auth_me import MeResponse
 from automunki.schemas.user import UserCreate, UserRead, UserUpdate
 from automunki.services.permissions import get_effective_permissions
-from automunki.services.user_avatars import (
-    media_type_for_filename,
-    remove_stored_avatar,
-    resolve_avatar_path,
-    write_user_avatar,
-)
+from automunki.services.user_avatars import detect_image
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -48,7 +45,7 @@ async def read_me(request: Request, session: AsyncSession = Depends(get_session)
                 display_name="Dev user",
                 role="admin",
                 updated_at=datetime.now(UTC),
-                avatar_filename=None,
+                has_avatar=False,
             ),
             permissions={k: "write" for k in ALL_PAGE_KEYS},
             auth_mode=settings.auth_mode,
@@ -77,15 +74,23 @@ async def upload_my_avatar(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_session),
 ):
+    """Replace the current user's avatar with the uploaded PNG/JPEG.
+
+    Bytes are stored in ``user.avatar_data`` (Postgres bytea) so they
+    survive Container App revision restarts and are visible across
+    replicas — the previous on-disk approach silently lost uploads on
+    every Azure deploy.
+    """
     raw = await file.read()
+    try:
+        media_type = detect_image(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     u = await session.get(User, user.id)
     if u is None:
         raise HTTPException(status_code=404, detail="User not found")
-    try:
-        name, _mt = write_user_avatar(u.id, raw, u.avatar_filename)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    u.avatar_filename = name
+    u.avatar_data = raw
+    u.avatar_media_type = media_type
     await session.commit()
 
 
@@ -97,10 +102,8 @@ async def delete_my_avatar(
     u = await session.get(User, user.id)
     if u is None:
         raise HTTPException(status_code=404, detail="User not found")
-    old = u.avatar_filename
-    if old:
-        remove_stored_avatar(u.id, old)
-    u.avatar_filename = None
+    u.avatar_data = None
+    u.avatar_media_type = None
     await session.commit()
 
 
@@ -109,13 +112,22 @@ async def get_my_avatar(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_session),
 ):
-    u = await session.get(User, user.id)
-    if u is None or not u.avatar_filename:
+    """Return the current user's avatar bytes inline.
+
+    Loaded with ``undefer(User.avatar_data)`` because the column is
+    deferred in the model — every other code path that touches a User
+    row should not pay the cost of dragging up to 1 MB of bytes into
+    the session identity map for nothing.
+    """
+    row = (
+        await session.execute(select(User).where(User.id == user.id).options(undefer(User.avatar_data)))
+    ).scalar_one_or_none()
+    if row is None or row.avatar_data is None:
         raise HTTPException(status_code=404, detail="No avatar")
-    path = resolve_avatar_path(u.avatar_filename)
-    if path is None:
-        raise HTTPException(status_code=404, detail="No avatar")
-    return FileResponse(path, media_type=media_type_for_filename(u.avatar_filename))
+    return Response(
+        content=row.avatar_data,
+        media_type=row.avatar_media_type or "application/octet-stream",
+    )
 
 
 users_router.include_router(fastapi_users.get_users_router(UserRead, UserUpdate))

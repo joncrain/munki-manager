@@ -29,7 +29,7 @@ The **local AutoPkg daemon** (`poll_local_autopkg.sh`) may instead use a shared 
 | GET | `/auth/me` | Compatibility wrapper around the FastAPI Users `/users/me` with extra Munki Manager fields (page write/read sets, `is_superuser`, `role`, avatar URL). |
 | GET | `/users/me` | FastAPI Users profile. |
 | PATCH | `/users/me` | Update current user profile. |
-| POST | `/users/me/avatar` | Multipart `file` (PNG/JPEG); stores under `USER_AVATARS_DIRECTORY`. |
+| POST | `/users/me/avatar` | Multipart `file` (PNG/JPEG, ≤ 1 MB); bytes stored in `user.avatar_data` (Postgres bytea). |
 | GET | `/users/me/avatar` | Serve the current user's avatar (JWT required). |
 | DELETE | `/users/me/avatar` | Remove the current user's avatar. |
 

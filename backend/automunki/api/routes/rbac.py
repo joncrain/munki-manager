@@ -21,7 +21,6 @@ from automunki.schemas.rbac_api import (
     UserRolesRead,
     UserRolesUpdate,
 )
-from automunki.services.user_avatars import remove_stored_avatar
 
 router = APIRouter(prefix="/rbac", tags=["rbac"])
 
@@ -175,6 +174,7 @@ async def delete_user_account(
             status_code=403,
             detail="Only superusers can delete superuser accounts",
         )
-    remove_stored_avatar(user.id, user.avatar_filename)
+    # Avatar bytes (user.avatar_data) cascade with the row delete; no extra
+    # cleanup needed now that they live in Postgres rather than on disk.
     await session.delete(user)
     await session.commit()

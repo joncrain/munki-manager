@@ -96,9 +96,6 @@ class Settings(BaseSettings):
     munki_repo_basic_auth_user: str = ""
     munki_repo_basic_auth_password: str = ""
 
-    #: User profile avatars. Empty = ``<repo>/backend/data/user-avatars``.
-    user_avatars_directory: str = ""
-
     api_public_url: str = ""
 
     #: Default AutoPkg execution target when the UI does not send ``runner``:

@@ -1,92 +1,44 @@
-"""Store user profile avatars on disk (not web-public; served with JWT)."""
+"""User profile avatars stored as bytes in Postgres.
+
+Why in the database, not on disk:
+
+- Azure Container Apps containers have ephemeral overlay filesystems.
+  Anything written outside a mounted volume is lost on revision restart.
+- ACA also runs multiple replicas behind a load balancer; an avatar
+  written to replica A's local disk is invisible to replica B.
+
+We considered Azure Blob Storage but the per-user payload is bounded at
+~1 MB (see :data:`MAX_AVATAR_BYTES`), there's at most one avatar per
+user, and ``user`` is a small table for any realistic deployment of this
+app. Storing the raw bytes inline keeps Terraform simple and avoids a
+SAS-URL surface for what is effectively a low-value asset.
+
+The :class:`User.avatar_data` column is ``deferred`` at the ORM level so
+the bytes don't load on every authenticated request — only the
+explicit avatar GET handler undefers and reads them.
+"""
 
 from __future__ import annotations
 
-import uuid
-from pathlib import Path
-
-from automunki.core.config import settings
-
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 _JPEG_MAGIC = b"\xff\xd8\xff"
-_MAX_BYTES = 1024 * 1024
+MAX_AVATAR_BYTES = 1024 * 1024  # 1 MB. Bounded so a single bytea fits in a TOAST page block.
 
 
-def resolve_user_avatars_directory() -> Path:
-    raw = (settings.user_avatars_directory or "").strip()
-    if raw:
-        return Path(raw).expanduser().resolve()
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "backend").is_dir():
-            return (parent / "backend" / "data" / "user-avatars").resolve()
-    return (Path.cwd() / "user-avatars").resolve()
+def detect_image(data: bytes) -> str:
+    """Return the media type for *data* (PNG or JPEG only).
 
-
-def _detect_image(data: bytes) -> tuple[str, str]:
-    """Return ``(suffix, media_type)`` for PNG or JPEG."""
-    if len(data) > _MAX_BYTES:
-        raise ValueError("Image too large (max 1MB)")
+    Validates by **content magic**, not the upload's claimed Content-Type or
+    filename suffix — a client that sends a PDF named ``avatar.png`` should
+    still be rejected. Raises :class:`ValueError` with a user-facing message
+    on any rejection so the route can surface 422 with the same text.
+    """
+    if len(data) > MAX_AVATAR_BYTES:
+        raise ValueError(f"Image too large (max {MAX_AVATAR_BYTES // 1024} KB)")
     if len(data) < 8:
         raise ValueError("Invalid image file")
     if data.startswith(_PNG_MAGIC):
-        return ".png", "image/png"
-    if data.startswith(_JPEG_MAGIC):
-        return ".jpg", "image/jpeg"
-    raise ValueError("Only PNG or JPEG images are supported")
-
-
-def disk_name_for_user(user_id: uuid.UUID, suffix: str) -> str:
-    return f"{user_id}{suffix}"
-
-
-def remove_stored_avatar(user_id: uuid.UUID, avatar_filename: str | None) -> None:
-    """Delete the on-disk file for *avatar_filename* if present."""
-    if not avatar_filename:
-        return
-    root = resolve_user_avatars_directory().resolve()
-    path = (root / avatar_filename).resolve()
-    if path.parent != root:
-        return
-    if path.is_file():
-        path.unlink()
-
-
-def write_user_avatar(user_id: uuid.UUID, data: bytes, old_filename: str | None) -> tuple[str, str]:
-    """Validate *data*, replace any previous file, return ``(filename, media_type)``."""
-    suffix, media_type = _detect_image(data)
-    name = disk_name_for_user(user_id, suffix)
-    out_dir = resolve_user_avatars_directory()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    root = out_dir.resolve()
-
-    remove_stored_avatar(user_id, old_filename)
-
-    # Remove other extension for same user (e.g. switched JPEG → PNG)
-    for ext in (".png", ".jpg", ".jpeg"):
-        alt = root / disk_name_for_user(user_id, ext)
-        if alt.is_file() and alt.name != name:
-            alt.unlink()
-
-    path = (root / name).resolve()
-    if path.parent != root:
-        raise ValueError("Invalid path")
-    path.write_bytes(data)
-    return name, media_type
-
-
-def media_type_for_filename(filename: str) -> str:
-    lower = filename.lower()
-    if lower.endswith(".png"):
         return "image/png"
-    if lower.endswith((".jpg", ".jpeg")):
+    if data.startswith(_JPEG_MAGIC):
         return "image/jpeg"
-    return "application/octet-stream"
-
-
-def resolve_avatar_path(filename: str) -> Path | None:
-    root = resolve_user_avatars_directory().resolve()
-    path = (root / filename).resolve()
-    if path.parent != root or not path.is_file():
-        return None
-    return path
+    raise ValueError("Only PNG or JPEG images are supported")
