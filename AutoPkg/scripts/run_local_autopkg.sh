@@ -401,6 +401,18 @@ xargs -L1 autopkg repo-add < AutoPkg/run_repo_list.txt
 echo "==> Updating recipe repos for this run ..."
 xargs -L1 autopkg repo-update < AutoPkg/run_repo_list.txt
 
+# Defense-in-depth: walk each override's on-disk ParentRecipe chain and
+# ``autopkg repo-add`` any repo the server-side ``run_repo_list.txt``
+# missed (incomplete trust_info, chain deepened since last verify, etc.).
+# Idempotent and a no-op when everything already resolves.
+echo "==> Verifying parent recipe chain coverage ..."
+if command -v uv >/dev/null 2>&1; then
+  uv run --no-project --with pyyaml python3 "${SCRIPT_DIR}/ensure_parent_repos.py" \
+    || python3 "${SCRIPT_DIR}/ensure_parent_repos.py"
+else
+  python3 "${SCRIPT_DIR}/ensure_parent_repos.py"
+fi
+
 # cloud-autopkg-runner loads ~/Library/Preferences/com.github.autopkg.plist in a new
 # process. Flush the prefs domain so RECIPE_SEARCH_DIRS from repo-add is visible
 # immediately (matches autopkg_cloud_runner.yml "Sync AutoPkg preferences to disk").

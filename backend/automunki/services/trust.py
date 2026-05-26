@@ -383,6 +383,12 @@ def _candidate_repos(identifier: str) -> list[str]:
     ``autopkg/<author>-recipes`` — without this, chain-walk resolution
     silently leaves ancestor entries out of trust_info and AutoPkg's local
     trust check fails (see ``_parse_identifier`` docstring).
+
+    Identifiers whose ``org_or_user`` segment already ends with
+    ``-recipes`` (e.g. ``com.github.ahousseini-recipes.download.UTM``) get
+    a literal ``autopkg/<org_or_user>`` candidate prepended; otherwise the
+    standard ``-recipes``-suffix heuristic produces the wrong repo name
+    (``autopkg/ahousseini-recipes-recipes``) and the chain stops there.
     """
     m4 = re.match(r"com\.github\.([^.]+)\.([^.]+)\.", identifier)
     if not m4:
@@ -390,12 +396,30 @@ def _candidate_repos(identifier: str) -> list[str]:
     if m4:
         org_or_user = m4.group(1)
         repo_hint = m4.group(2)
-        candidates = [
-            f"autopkg/{repo_hint}-recipes",
-            f"autopkg/{org_or_user}-recipes",
-            f"{org_or_user}/{repo_hint}-recipes",
-            "autopkg/recipes",
-        ]
+        candidates: list[str] = []
+        if org_or_user.endswith("-recipes"):
+            # ``com.github.ahousseini-recipes.download.UTM`` etc. — the
+            # literal segment IS the repo name; appending ``-recipes``
+            # produces a non-existent ``autopkg/X-recipes-recipes`` and
+            # would silently win over the right repo by alphabetical
+            # ordering further downstream.
+            candidates.append(f"autopkg/{org_or_user}")
+            candidates.extend(
+                [
+                    f"autopkg/{repo_hint}-recipes",
+                    f"{org_or_user}/{repo_hint}-recipes",
+                    "autopkg/recipes",
+                ]
+            )
+        else:
+            candidates.extend(
+                [
+                    f"autopkg/{repo_hint}-recipes",
+                    f"autopkg/{org_or_user}-recipes",
+                    f"{org_or_user}/{repo_hint}-recipes",
+                    "autopkg/recipes",
+                ]
+            )
         return list(dict.fromkeys(candidates))
 
     m_short = re.match(r"com\.([^.]+)\.[^.]+\..+$", identifier)
@@ -679,14 +703,39 @@ async def _walk_recipe_chain(
 async def verify_trust(
     stored_trust_info: dict | None,
     parent_recipe_identifier: str | None,
+    *,
+    location_cache: dict[str, tuple[str, str]] | None = None,
 ) -> TrustVerificationResult:
     """
-    Verify trust by re-hashing the files at their stored locations.
+    Verify trust by walking the live parent chain and diffing against stored.
 
-    If stored trust_info has github_repo/github_path, we fetch directly
-    from those locations (fast, reliable). Otherwise we fall back to
-    re-resolving from identifiers (slower, less reliable — handles
-    legacy entries).
+    Mirrors AutoPkg's local trust check (which walks the on-disk chain top
+    to bottom) instead of just re-hashing the entries that already exist in
+    storage. The previous "re-hash stored keys" implementation reported
+    ``verified`` whenever the immediate parent's sha256 still matched —
+    silently ignoring:
+
+    * **New ancestors**: e.g. ``UTM.munki``'s grandparent
+      ``com.github.ahousseini-recipes.download.UTM`` was never stored
+      because identifier resolution silently failed during the original
+      compute. AutoPkg-on-disk demanded that ancestor be in
+      ``ParentRecipeTrustInfo`` and refused to run; our verify reported
+      ``verified`` and the user was told everything was fine.
+    * **Modified grandparents**: any change in an ancestor recipe goes
+      undetected because the verify never fetched / hashed those files.
+    * **Removed ancestors**: e.g. an upstream parent rename leaves a stale
+      identifier pointing at a 404; AutoPkg fails the trust check, our
+      verify silently keeps the stale entry.
+
+    The full-chain walk also writes a complete ``new_trust_info`` into the
+    ``TrustChangeRequest`` (via ``persist_verify_trust_result``), so the
+    approval surface matches what the next runner will actually see.
+
+    GitHub error fall-back: if the live walk hits a rate-limit / forbidden
+    error or any other resolver failure, we degrade to the legacy
+    re-hash-stored-keys path so a transient outage doesn't flip a
+    previously-approved recipe to ``failed`` (which would block runs and
+    require manual approval to recover).
     """
     if not stored_trust_info:
         return TrustVerificationResult(
@@ -701,26 +750,58 @@ async def verify_trust(
         )
 
     try:
-        current_trust = await _compute_current_hashes(stored_trust_info)
+        live_trust = await compute_trust_info(
+            parent_recipe_identifier,
+            existing_trust_info=stored_trust_info,
+            location_cache=location_cache,
+        )
+        current_trust = {
+            "parent_recipes": {
+                identifier: {"sha256_hash": entry.get("sha256_hash")}
+                for identifier, entry in live_trust.get("parent_recipes", {}).items()
+                if isinstance(entry, dict) and entry.get("sha256_hash")
+            },
+            "non_core_processors": {
+                proc: {"sha256_hash": entry.get("sha256_hash")}
+                for proc, entry in live_trust.get("non_core_processors", {}).items()
+                if isinstance(entry, dict) and entry.get("sha256_hash")
+            },
+        }
     except GitHubRateLimitError:
         return TrustVerificationResult(
             status="error",
             error="GitHub API rate limit exceeded. Try again later.",
         )
     except GitHubForbiddenError as exc:
-        # Surface the actual GitHub message (PAT lifetime, missing scope, SAML,
-        # etc.) instead of the misleading "rate limit" we used to return.
         msg = exc.github_message or "Permission denied"
         return TrustVerificationResult(
             status="error",
             error=f"GitHub denied access: {msg}",
         )
-    except Exception as exc:
-        logger.exception("trust_verify_error")
-        return TrustVerificationResult(
-            status="error",
-            error=f"Failed to compute current trust info: {exc}",
+    except Exception:
+        logger.exception(
+            "trust_verify_live_walk_failed",
+            extra={"identifier": parent_recipe_identifier},
         )
+        try:
+            current_trust = await _compute_current_hashes(stored_trust_info)
+        except GitHubRateLimitError:
+            return TrustVerificationResult(
+                status="error",
+                error="GitHub API rate limit exceeded. Try again later.",
+            )
+        except GitHubForbiddenError as exc:
+            msg = exc.github_message or "Permission denied"
+            return TrustVerificationResult(
+                status="error",
+                error=f"GitHub denied access: {msg}",
+            )
+        except Exception as exc:
+            logger.exception("trust_verify_error")
+            return TrustVerificationResult(
+                status="error",
+                error=f"Failed to compute current trust info: {exc}",
+            )
 
     parent_diff = _diff_trust_section(
         stored_trust_info.get("parent_recipes", {}),
@@ -1208,9 +1289,17 @@ async def build_override_data(
 def _repo_from_identifier(identifier: str) -> str | None:
     """Infer a GitHub repo full_name from a recipe identifier.
 
-    Handles both:
+    Handles:
       * ``com.github.autopkg.<user>.<type>.<name>`` → ``autopkg/<user>-recipes``
+      * ``com.github.<user>.<type>.<name>`` → ``autopkg/<user>-recipes``
       * ``com.<author>.<type>.<name>`` → ``autopkg/<author>-recipes``
+
+    Special-case: when the ``user``/``author`` segment already ends with
+    ``-recipes`` (e.g. ``com.github.ahousseini-recipes.download.UTM``),
+    the literal segment is the repo name — appending ``-recipes`` again
+    would produce ``autopkg/ahousseini-recipes-recipes`` (does not exist)
+    and the inferred repo would be silently dropped from
+    ``run_repo_list.txt``, breaking AutoPkg parent resolution at run time.
 
     The short form is the one used by scriptingosx, mosen, etc. — same
     fix as ``_parse_identifier`` (this helper feeds
@@ -1219,10 +1308,16 @@ def _repo_from_identifier(identifier: str) -> str | None:
     skips the relevant repo locally and trust comparisons drift).
     """
     parts = identifier.split(".")
+
+    def _suffix(seg: str) -> str:
+        return seg if seg.endswith("-recipes") else f"{seg}-recipes"
+
     if len(parts) >= 5 and parts[:3] == ["com", "github", "autopkg"]:
-        return f"autopkg/{parts[3]}-recipes"
+        return f"autopkg/{_suffix(parts[3])}"
+    if len(parts) >= 5 and parts[:2] == ["com", "github"]:
+        return f"autopkg/{_suffix(parts[2])}"
     if len(parts) >= 4 and parts[0] == "com" and parts[1] != "github":
-        return f"autopkg/{parts[1]}-recipes"
+        return f"autopkg/{_suffix(parts[1])}"
     return None
 
 

@@ -138,6 +138,23 @@ jobs:
           REPO_FILE="AutoPkg/run_repo_list.txt"
           cat "$REPO_FILE" | xargs -L1 autopkg repo-add
 
+      - name: Ensure parent recipe repos
+        # Server-side ``run_repo_list.txt`` is built from each recipe's stored
+        # ``trust_info.parent_recipes``. When trust info is incomplete (older
+        # imports, identifier resolution failures during compute_trust_info,
+        # upstream chain deepening since last verify), the runner ends up
+        # without the repo that contains a needed grandparent and AutoPkg
+        # crashes with "Could not find parent recipe for com.github.X.Y".
+        # This script walks every override's on-disk parent chain and
+        # ``autopkg repo-add``s the inferred repo for any unresolved ancestor.
+        # No-op when every chain already resolves on disk. We use ``uv run
+        # --with pyyaml`` so ``.recipe.yaml`` files parse correctly without
+        # mutating the runner's system Python; if ``uv`` is unavailable the
+        # script falls back to plist-only parsing (rare yaml-recipe case).
+        run: |
+          uv run --no-project --with pyyaml python3 AutoPkg/scripts/ensure_parent_repos.py \
+            || python3 AutoPkg/scripts/ensure_parent_repos.py
+
       - name: Sync AutoPkg preferences to disk
         # cloud-autopkg-runner spawns subprocesses that re-read the
         # com.github.autopkg domain; this `defaults read` flushes our

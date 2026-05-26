@@ -127,6 +127,21 @@ def test_candidate_repos_short_form_skips_com_github_misparse() -> None:
     assert "autopkg/github-recipes" not in repos
 
 
+def test_candidate_repos_org_segment_already_ends_in_recipes() -> None:
+    """UTM grandparent: ``com.github.ahousseini-recipes.download.UTM``.
+
+    The author baked ``-recipes`` into the reverse-DNS prefix. Without
+    the special case, candidates were ``autopkg/download-recipes`` (wrong
+    repo) and ``autopkg/ahousseini-recipes-recipes`` (does not exist) —
+    the chain walker fetched nothing and ``infer_repos_from_trust_info``
+    silently dropped the repo from ``run_repo_list.txt``, so AutoPkg's
+    runtime parent-recipe lookup failed.
+    """
+    repos = _candidate_repos("com.github.ahousseini-recipes.download.UTM")
+    assert repos[0] == "autopkg/ahousseini-recipes"
+    assert "autopkg/ahousseini-recipes-recipes" not in repos
+
+
 # ── _repo_from_identifier ───────────────────────────────────────────────────
 
 
@@ -137,6 +152,12 @@ def test_candidate_repos_short_form_skips_com_github_misparse() -> None:
             "com.github.autopkg.wardsparadox.munki.Ghostty",
             "autopkg/wardsparadox-recipes",
         ),
+        # ``com.github.<user>.<type>.<name>`` — same convention without the
+        # explicit ``autopkg`` middle segment.
+        (
+            "com.github.swy.download.BraveUniversal",
+            "autopkg/swy-recipes",
+        ),
         # Short form — the WhatsApp case. Drives what shows up in
         # ``run_repo_list.txt`` via ``infer_repos_from_trust_info``.
         (
@@ -146,6 +167,12 @@ def test_candidate_repos_short_form_skips_com_github_misparse() -> None:
         (
             "com.mosen.pkg.AdobeAcrobatPro",
             "autopkg/mosen-recipes",
+        ),
+        # UTM grandparent: middle segment already ends in ``-recipes``.
+        # Don't double-suffix; the segment IS the repo name.
+        (
+            "com.github.ahousseini-recipes.download.UTM",
+            "autopkg/ahousseini-recipes",
         ),
     ],
 )
@@ -237,3 +264,25 @@ def test_infer_repos_from_trust_info_empty_or_none() -> None:
     assert infer_repos_from_trust_info(None) == []
     assert infer_repos_from_trust_info({}) == []
     assert infer_repos_from_trust_info({"parent_recipes": {}, "non_core_processors": {}}) == []
+
+
+def test_infer_repos_from_trust_info_utm_full_chain() -> None:
+    """UTM full chain: ``flammable.munki`` → ``ahousseini-recipes.download``.
+
+    Reproduces the parent-resolution failure: when the chain walker
+    correctly records both ancestors (post the ``compute_trust_info``
+    fix that walks the full chain), the repo inferer must produce both
+    ``autopkg/flammable-recipes`` and ``autopkg/ahousseini-recipes`` so
+    ``run_repo_list.txt`` covers the whole chain.
+    """
+    trust_info = {
+        "parent_recipes": {
+            "com.github.flammable.munki.UTM": {"sha256_hash": "a"},
+            "com.github.ahousseini-recipes.download.UTM": {"sha256_hash": "b"},
+        },
+        "non_core_processors": {},
+    }
+    repos = infer_repos_from_trust_info(trust_info)
+    assert "autopkg/flammable-recipes" in repos
+    assert "autopkg/ahousseini-recipes" in repos
+    assert "autopkg/ahousseini-recipes-recipes" not in repos

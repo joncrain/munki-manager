@@ -60,6 +60,7 @@ async def verify_trust_live_for_recipes(
         vr = await verify_trust(
             stored_trust_info=recipe.trust_info,
             parent_recipe_identifier=recipe.parent_recipe,
+            location_cache=location_cache,
         )
         await persist_verify_trust_result(session, recipe, vr, location_cache)
         rows.append(

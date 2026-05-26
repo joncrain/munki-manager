@@ -1470,12 +1470,13 @@ async def verify_recipe_trust(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
+    location_cache = await build_location_cache(session)
     result = await verify_trust(
         stored_trust_info=recipe.trust_info,
         parent_recipe_identifier=recipe.parent_recipe,
+        location_cache=location_cache,
     )
 
-    location_cache = await build_location_cache(session)
     await persist_verify_trust_result(session, recipe, result, location_cache)
 
     await create_audit_entry(
@@ -1754,6 +1755,7 @@ async def update_repos_and_verify_trust(
             verification = await verify_trust(
                 stored_trust_info=recipe.trust_info,
                 parent_recipe_identifier=recipe.parent_recipe,
+                location_cache=location_cache,
             )
             recipe.trust_verified_at = datetime.now(UTC)
 
