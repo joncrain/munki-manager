@@ -3,37 +3,39 @@
 import json
 import os
 import plistlib
+import re
 from typing import Any
+
+_UPPER_INPUT_KEY = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
 def _coerce_input_scalars_to_str(inp: dict) -> dict:
-    """Coerce numeric ``Input`` scalars to strings before serializing.
+    """Coerce non-string ``Input`` scalars to strings before serializing.
 
-    AutoPkg Input values are conventionally strings in upstream recipes
-    (e.g. ``MAJOR_VERSION = "5"`` in ``Blender.download.recipe``). JSON
-    storage and the override editor's ``kvToDict`` (``JSON.parse`` per
-    entry) can promote ``"5"`` to a JSON number. ``plistlib.dump`` then
-    writes it as ``<integer>5</integer>``, and AutoPkg's
-    ``do_variable_substitution`` (``RE_KEYREF.sub(getdata, item)``) crashes
-    with ``TypeError: sequence item 1: expected str instance, int found``
-    the moment that variable is referenced inside a string template (e.g.
-    ``re_pattern = "(?s)(Blender(%MAJOR_VERSION%\\.\\d+)/)..."``).
+    Runner-side defense mirroring the backend's ``_coerce_input_scalars_to_str``
+    in ``backend/automunki/api/routes/autopkg.py`` — see that module's docstring
+    for the full rationale and the two known crash sites
+    (``Blender.download`` ``MAJOR_VERSION`` int, ``Cursor.munki``
+    ``DERIVE_MIN_OS`` bool). Keeping this in lockstep means a runner can't
+    emit a broken plist even if it talks to an older server build that
+    hasn't received the matching coercion.
 
-    Runner-side defense so we don't depend on every backend deployment
-    having the matching server-side fix. The backend applies the same
-    coercion in ``_runner_plist_dict_for_recipe``; this keeps a runner
-    from emitting a broken plist if it happens to talk to an older server.
-
-    Bools (``extract_icon``, ``unattended_install``, …), ``None``, dicts
-    (``pkginfo``), and lists (``catalogs``) are left alone. ``bool`` is a
-    subclass of ``int`` in Python, so it is checked first.
+    Strategy: for top-level Input keys matching AutoPkg's upper-case
+    substitution convention, coerce ``int``/``float``/``bool`` to their
+    string form. Lower-case keys (``extract_icon``, ``unattended_install``,
+    …), dicts, lists, and ``None`` are left alone. ``bool`` is a subclass
+    of ``int`` so it is checked first.
     """
     out: dict[str, Any] = {}
     for k, v in inp.items():
-        if isinstance(v, bool) or v is None:
+        if v is None or isinstance(v, (dict, list)):
             out[k] = v
+            continue
+        is_substitution_key = isinstance(k, str) and bool(_UPPER_INPUT_KEY.match(k))
+        if isinstance(v, bool):
+            out[k] = ("true" if v else "false") if is_substitution_key else v
         elif isinstance(v, (int, float)):
-            out[k] = str(v)
+            out[k] = str(v) if is_substitution_key else v
         else:
             out[k] = v
     return out

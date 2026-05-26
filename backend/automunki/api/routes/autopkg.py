@@ -178,31 +178,47 @@ def _apply_extract_icon_to_runner_plist(recipe: AutoPkgRecipe, plist: dict) -> N
     inp["extract_icon"] = True
 
 
+_UPPER_INPUT_KEY = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+
 def _coerce_input_scalars_to_str(inp: dict) -> dict:
-    """Coerce numeric ``Input`` scalars to strings for the runner plist.
+    """Coerce non-string ``Input`` scalars to strings for the runner plist.
 
-    AutoPkg Input values are conventionally strings in upstream recipes
-    (e.g. ``<key>MAJOR_VERSION</key><string>5</string>``). JSON storage and
-    JS form parsers (notably the override editor's ``kvToDict``, which runs
+    AutoPkg's wiki documents the convention that ``UPPER_CASE`` Input keys
+    are string variables consumed via ``%VAR%`` substitution, while
+    ``lower_case`` keys carry native types (bools like ``extract_icon``,
+    dicts like ``pkginfo``, lists like ``catalogs``). JSON storage and JS
+    form parsers (notably the override editor's ``kvToDict``, which runs
     ``JSON.parse`` on every entry) can promote a bare numeric value like
-    ``"5"`` to a Python/JSON ``int``. ``plistlib.dump`` then writes it as
-    ``<integer>5</integer>``, and AutoPkg's ``do_variable_substitution``
-    (``RE_KEYREF.sub(getdata, item)``) crashes with
-    ``TypeError: sequence item 1: expected str instance, int found`` the
-    moment that variable is referenced inside a string template (e.g.
-    ``re_pattern = "(?s)(Blender(%MAJOR_VERSION%\\.\\d+)/)..."`` in
-    ``Blender.download.recipe``).
+    ``"5"`` to a JSON ``int`` and a bare ``"true"`` to a JSON ``bool``.
+    ``plistlib.dump`` then writes ``<integer>5</integer>`` or ``<true/>``
+    in the override, and AutoPkg's ``do_variable_substitution``
+    (``RE_KEYREF.sub(getdata, item)``) crashes the moment that variable is
+    referenced inside a string template:
 
-    Bools (``extract_icon``, ``unattended_install``, …), ``None``, dicts
-    (``pkginfo``), and lists (``catalogs``) are left alone. ``bool`` is a
-    subclass of ``int`` in Python, so it is checked first.
+    * ``re_pattern = "(?s)(Blender(%MAJOR_VERSION%\\.\\d+)/)..."`` in
+      ``Blender.download.recipe`` →
+      ``TypeError: sequence item 1: expected str instance, int found``.
+    * ``derive_minimum_os_version = "%DERIVE_MIN_OS%"`` in
+      ``Cursor.munki.recipe`` →
+      ``TypeError: sequence item 0: expected str instance, bool found``.
+
+    Strategy: for top-level Input keys whose name matches the AutoPkg
+    upper-case substitution convention, coerce ``int``/``float``/``bool``
+    to their string form. Lower-case keys (``extract_icon``,
+    ``unattended_install``, …), dicts, lists, and ``None`` are left alone.
+    ``bool`` is a subclass of ``int`` so it is checked first.
     """
     out: dict = {}
     for k, v in inp.items():
-        if isinstance(v, bool) or v is None:
+        if v is None or isinstance(v, (dict, list)):
             out[k] = v
+            continue
+        is_substitution_key = isinstance(k, str) and bool(_UPPER_INPUT_KEY.match(k))
+        if isinstance(v, bool):
+            out[k] = ("true" if v else "false") if is_substitution_key else v
         elif isinstance(v, (int, float)):
-            out[k] = str(v)
+            out[k] = str(v) if is_substitution_key else v
         else:
             out[k] = v
     return out
