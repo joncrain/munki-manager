@@ -15,8 +15,8 @@ dependencies = [
     "fastapi-users[sqlalchemy]>=13.0.0",
     "httpx>=0.27.0",
     "structlog>=24.0.0",
-    "boto3>=1.35.0",
-    "python-multipart>=0.0.27",
+    "boto3>=1.43.19",
+    "python-multipart>=0.0.30",
     "prometheus-fastapi-instrumentator>=7.0.0",
     "pyyaml>=6.0.0",
     "argon2-cffi>=23.1.0",
@@ -26,9 +26,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.3",
-    "pytest-asyncio>=0.24.0",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=5.0.0",
-    "ruff>=0.8.0",
+    "ruff>=0.15.15",
 ]
 # Install with `uv pip install -e ".[azure]"` to enable the Azure Blob storage
 # backend (storage_backend=azure_blob). See docs/storage-backends.md.
@@ -40,7 +40,7 @@ dev = [
 azure = [
     "azure-storage-blob>=12.20.0",
     "azure-identity>=1.17.0",
-    "aiohttp>=3.9.0",
+    "aiohttp>=3.14.0",
 ]
 
 [project.scripts]
