@@ -59,6 +59,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { useDocumentTitle } from '@/hooks/use-document-title'
+import { usePkginfoVersionsForName } from '@/hooks/use-pkginfo-versions'
 import {
   type AuditLogRead,
   api,
@@ -300,6 +301,37 @@ function buildUpdatePayload(
   return payload
 }
 
+const VERSION_SPECIFIC_FIELDS: (keyof EditableFields)[] = [
+  'installer_item_location',
+  'installer_item_hash',
+  'installer_item_size',
+  'package_path',
+  'package_complete_url',
+  'installed_size',
+  'uninstaller_item_location',
+  'receipts',
+]
+
+function filterSharedPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const out = { ...payload }
+  for (const key of VERSION_SPECIFIC_FIELDS) {
+    delete out[key]
+  }
+  return out
+}
+
+function versionSpecificPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const key of VERSION_SPECIFIC_FIELDS) {
+    if (key in payload) out[key] = payload[key]
+  }
+  return out
+}
+
 export default function SoftwareDetailPage() {
   const params = useParams()
   const navigate = useNavigate()
@@ -308,6 +340,11 @@ export default function SoftwareDetailPage() {
 
   const [editing, setEditing] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  const [pendingSavePayload, setPendingSavePayload] = useState<Record<
+    string,
+    unknown
+  > | null>(null)
   const [clearMetadataCacheOnDelete, setClearMetadataCacheOnDelete] =
     useState(false)
   const clearCacheCheckboxId = useId()
@@ -329,6 +366,25 @@ export default function SoftwareDetailPage() {
     queryKey: ['pkginfo', id],
     queryFn: () => api.get<PkgInfoDetail>(`/pkginfo/${id}`),
   })
+
+  const { data: versionsData } = usePkginfoVersionsForName(
+    pkg?.name ?? '',
+    Boolean(pkg?.name),
+  )
+
+  const siblingVersions = useMemo(
+    () => versionsData?.items ?? [],
+    [versionsData?.items],
+  )
+  const hasMultipleVersions = siblingVersions.length > 1
+
+  const pendingSharedPayload = useMemo(
+    () => (pendingSavePayload ? filterSharedPayload(pendingSavePayload) : null),
+    [pendingSavePayload],
+  )
+  const canApplyToAllVersions =
+    pendingSharedPayload !== null &&
+    Object.keys(pendingSharedPayload).length > 0
 
   useDocumentTitle(
     'Munki',
@@ -383,16 +439,37 @@ export default function SoftwareDetailPage() {
   })
 
   const saveMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      api.put(`/pkginfo/${id}`, payload),
-    onSuccess: () => {
-      toast.success('Changes saved')
+    mutationFn: async ({
+      payload,
+      targetIds,
+      versionSpecific,
+    }: {
+      payload: Record<string, unknown>
+      targetIds: string[]
+      versionSpecific?: Record<string, unknown>
+    }) => {
+      await Promise.all(
+        targetIds.map((vid) => api.put(`/pkginfo/${vid}`, payload)),
+      )
+      if (versionSpecific && Object.keys(versionSpecific).length > 0) {
+        await api.put(`/pkginfo/${id}`, versionSpecific)
+      }
+    },
+    onSuccess: (_data, { targetIds }) => {
+      const count = targetIds.length
+      toast.success(
+        count > 1 ? `Changes saved to ${count} versions` : 'Changes saved',
+      )
       queryClient.invalidateQueries({ queryKey: ['pkginfo', id] })
+      queryClient.invalidateQueries({ queryKey: ['pkginfo'] })
+      queryClient.invalidateQueries({ queryKey: ['pkginfo-versions'] })
       queryClient.invalidateQueries({ queryKey: ['pkginfo-item-meta'] })
       queryClient.invalidateQueries({ queryKey: ['pkginfo-display-labels'] })
       queryClient.invalidateQueries({ queryKey: ['pkginfo-plist-raw', id] })
       setEditing(false)
       setDirty(false)
+      setSaveDialogOpen(false)
+      setPendingSavePayload(null)
     },
     onError: (err: Error) => {
       toast.error(`Save failed: ${err.message}`)
@@ -437,6 +514,15 @@ export default function SoftwareDetailPage() {
     if (pkg && !form) setForm(pkgToEditable(pkg))
   }, [pkg, form])
 
+  // Reset editor state when navigating between versions of the same item.
+  useEffect(() => {
+    setEditing(false)
+    setDirty(false)
+    setForm(null)
+    setSaveDialogOpen(false)
+    setPendingSavePayload(null)
+  }, [id])
+
   const handleBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
       if (dirty) e.preventDefault()
@@ -464,7 +550,40 @@ export default function SoftwareDetailPage() {
       setEditing(false)
       return
     }
-    saveMutation.mutate(payload)
+    if (hasMultipleVersions) {
+      setPendingSavePayload(payload)
+      setSaveDialogOpen(true)
+      return
+    }
+    saveMutation.mutate({ payload, targetIds: [id] })
+  }
+
+  const handleSaveThisVersion = () => {
+    if (!pendingSavePayload) return
+    saveMutation.mutate({
+      payload: pendingSavePayload,
+      targetIds: [id],
+    })
+  }
+
+  const handleSaveAllVersions = () => {
+    if (!pendingSavePayload || !pendingSharedPayload) return
+    saveMutation.mutate({
+      payload: pendingSharedPayload,
+      targetIds: siblingVersions.map((v) => v.id),
+      versionSpecific: versionSpecificPayload(pendingSavePayload),
+    })
+  }
+
+  const handleVersionChange = (newId: string) => {
+    if (newId === id) return
+    if (dirty) {
+      const ok = window.confirm(
+        'You have unsaved changes. Switch to another version anyway?',
+      )
+      if (!ok) return
+    }
+    navigate(`/software/${newId}`)
   }
 
   const handleCancel = () => {
@@ -541,8 +660,51 @@ export default function SoftwareDetailPage() {
             <h1 className="wrap-break-word text-2xl font-bold text-pretty sm:text-3xl">
               {pkg.display_name || pkg.name}
             </h1>
-            <p className="wrap-break-word text-sm text-muted-foreground sm:text-base">
-              {pkg.name} &mdash; Version {pkg.version}
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground sm:text-base">
+              <span className="font-mono">{pkg.name}</span>
+              {hasMultipleVersions ? (
+                <>
+                  <span className="text-muted-foreground/70">Version</span>
+                  <Select value={id} onValueChange={handleVersionChange}>
+                    <SelectTrigger
+                      className="h-8 w-auto gap-1.5 rounded-full border-border/70 bg-background/80 px-3 font-mono text-xs shadow-sm sm:text-sm"
+                      aria-label="Switch version"
+                    >
+                      <SelectValue placeholder={pkg.version} />
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-48">
+                      {siblingVersions.map((v) => (
+                        <SelectItem
+                          key={v.id}
+                          value={v.id}
+                          className="font-mono"
+                        >
+                          {v.version}
+                          {v.id === id ? ' (viewing)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Badge
+                    variant="outline"
+                    className="h-6 px-2 text-[11px] font-normal"
+                  >
+                    {siblingVersions.length} versions
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <span aria-hidden className="text-muted-foreground/50">
+                    &mdash;
+                  </span>
+                  <span>
+                    Version{' '}
+                    <span className="font-mono text-foreground/90">
+                      {pkg.version}
+                    </span>
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -589,6 +751,65 @@ export default function SoftwareDetailPage() {
           ) : null}
         </div>
       </div>
+
+      <Dialog
+        open={saveDialogOpen}
+        onOpenChange={(open) => {
+          setSaveDialogOpen(open)
+          if (!open) setPendingSavePayload(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save changes</DialogTitle>
+            <DialogDescription>
+              This item has {siblingVersions.length} versions. Choose whether to
+              update only{' '}
+              <span className="font-mono text-foreground">{pkg.version}</span>{' '}
+              or apply shared metadata to every version.
+            </DialogDescription>
+          </DialogHeader>
+          {!canApplyToAllVersions ? (
+            <p className="text-sm text-muted-foreground">
+              Your changes are limited to installer or package fields for this
+              version, so they can only be saved here.
+            </p>
+          ) : null}
+          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+            <Button
+              type="button"
+              className="w-full"
+              onClick={handleSaveThisVersion}
+              disabled={saveMutation.isPending}
+            >
+              {saveMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Save className="h-4 w-4" aria-hidden />
+              )}
+              This version only ({pkg.version})
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={handleSaveAllVersions}
+              disabled={saveMutation.isPending || !canApplyToAllVersions}
+            >
+              All {siblingVersions.length} versions
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => setSaveDialogOpen(false)}
+              disabled={saveMutation.isPending}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={deleteDialogOpen}

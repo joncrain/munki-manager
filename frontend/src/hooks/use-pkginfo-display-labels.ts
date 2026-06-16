@@ -48,6 +48,70 @@ export function usePkginfoDisplayLabels(names: string[]) {
   })
 }
 
+export interface PkginfoInstallReportLink {
+  displayName: string
+  pkginfoId: string | null
+}
+
+function installReportLinkKey(name: string, version: string | null) {
+  return `${name}\0${version ?? ''}`
+}
+
+/** Resolve install report rows to pkginfo display names and detail-page links. */
+export function usePkginfoLinksForInstallReports(
+  rows: { item_name: string; item_version: string | null }[],
+) {
+  const uniqueNames = useMemo(
+    () => [...new Set(rows.map((r) => r.item_name).filter(Boolean))].sort(),
+    [rows],
+  )
+  const linkKeys = useMemo(
+    () => [
+      ...new Set(
+        rows.map((r) => installReportLinkKey(r.item_name, r.item_version)),
+      ),
+    ],
+    [rows],
+  )
+
+  return useQuery({
+    queryKey: ['pkginfo-install-links', uniqueNames.join('\0')],
+    queryFn: async () => {
+      const byName: Record<string, PkgInfoSummary[]> = {}
+      await Promise.all(
+        uniqueNames.map(async (name) => {
+          const res = await api.get<PaginatedResponse<PkgInfoSummary>>(
+            `/pkginfo?name=${encodeURIComponent(name)}&page_size=200`,
+          )
+          byName[name] = res.items
+        }),
+      )
+
+      const out: Record<string, PkginfoInstallReportLink> = {}
+      for (const key of linkKeys) {
+        const sep = key.indexOf('\0')
+        const name = sep >= 0 ? key.slice(0, sep) : key
+        const version = sep >= 0 ? key.slice(sep + 1) : ''
+        const versions = byName[name] ?? []
+        const match = version
+          ? versions.find((v) => v.version === version)
+          : versions[0]
+        const displayName =
+          match?.display_name?.trim() ||
+          versions[0]?.display_name?.trim() ||
+          name
+        out[key] = {
+          displayName,
+          pkginfoId: match?.id ?? versions[0]?.id ?? null,
+        }
+      }
+      return out
+    },
+    enabled: uniqueNames.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export interface PkginfoItemMeta {
   displayName: string
   iconName: string | null

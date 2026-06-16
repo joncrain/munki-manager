@@ -391,16 +391,27 @@ async def list_runs(
     session: AsyncSession = Depends(get_session),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    status: RunStatus | None = Query(None, description="Filter by run status"),
 ):
-    count = (await session.execute(select(func.count()).select_from(AutoPkgRun))).scalar() or 0
+    filters = []
+    if status is not None:
+        filters.append(AutoPkgRun.status == status)
 
-    result = await session.execute(
+    count_q = select(func.count()).select_from(AutoPkgRun)
+    if filters:
+        count_q = count_q.where(*filters)
+    count = (await session.execute(count_q)).scalar() or 0
+
+    list_q = (
         select(AutoPkgRun)
         .options(selectinload(AutoPkgRun.results), selectinload(AutoPkgRun.schedule))
         .order_by(AutoPkgRun.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
+    if filters:
+        list_q = list_q.where(*filters)
+    result = await session.execute(list_q)
     runs = result.scalars().unique().all()
 
     return PaginatedResponse(

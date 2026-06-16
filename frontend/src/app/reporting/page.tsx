@@ -120,7 +120,7 @@ export default function ReportingPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="border-l-4 border-l-gruvbox-blue/50 bg-gruvbox-blue/[0.06]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Fleet size</CardTitle>
@@ -176,7 +176,7 @@ export default function ReportingPage() {
             <CardDescription>of fleet reporting weekly</CardDescription>
           </CardContent>
         </Card>
-      </div>
+      </div> */}
 
       <div className="flex flex-wrap items-center gap-2">
         <Input

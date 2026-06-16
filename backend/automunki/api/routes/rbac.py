@@ -120,6 +120,7 @@ async def list_user_roles(session: AsyncSession = Depends(get_session)):
         out.append(
             UserRolesRead(
                 user_id=u.id,
+                name=(u.display_name or "").strip(),
                 email=u.email,
                 is_superuser=u.is_superuser,
                 role_ids=rid,
@@ -148,6 +149,7 @@ async def set_user_roles(
     await session.refresh(user, ["role_memberships"])
     return UserRolesRead(
         user_id=user.id,
+        name=(user.display_name or "").strip(),
         email=user.email,
         is_superuser=user.is_superuser,
         role_ids=[m.role_id for m in user.role_memberships],

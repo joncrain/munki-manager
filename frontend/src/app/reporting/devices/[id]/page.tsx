@@ -39,6 +39,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDocumentTitle } from '@/hooks/use-document-title'
+import { usePkginfoLinksForInstallReports } from '@/hooks/use-pkginfo-display-labels'
 import {
   api,
   type ClientInstallReportRow,
@@ -66,59 +67,83 @@ function reportStatusVariant(status: string) {
   }
 }
 
-const reportColumns: ColumnDef<ClientInstallReportRow>[] = [
-  {
-    accessorKey: 'item_name',
-    header: 'Item',
-    cell: ({ row }) => (
-      <span className="font-medium">{row.original.item_name || '—'}</span>
-    ),
-  },
-  {
-    accessorKey: 'item_version',
-    header: 'Version',
-    cell: ({ row }) => row.original.item_version || '—',
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => (
-      <Badge variant={reportStatusVariant(row.original.status)}>
-        {row.original.status}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: 'install_reason',
-    header: 'Reason',
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">
-        {formatInstallReason(row.original.install_reason)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'install_date',
-    header: 'Install time',
-    cell: ({ row }) =>
-      row.original.install_date ? (
-        <span suppressHydrationWarning className="text-sm">
-          {formatDateTime(row.original.install_date)}
-        </span>
-      ) : (
-        '—'
+function installReportLinkKey(name: string, version: string | null) {
+  return `${name}\0${version ?? ''}`
+}
+
+function makeReportColumns(
+  links:
+    | Record<string, { displayName: string; pkginfoId: string | null }>
+    | undefined,
+): ColumnDef<ClientInstallReportRow>[] {
+  return [
+    {
+      accessorKey: 'item_name',
+      header: 'Item',
+      cell: ({ row }) => {
+        const { item_name, item_version } = row.original
+        if (!item_name) return '—'
+        const link = links?.[installReportLinkKey(item_name, item_version)]
+        const label = link?.displayName ?? item_name
+        if (link?.pkginfoId) {
+          return (
+            <Link
+              to={`/software/${link.pkginfoId}`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              {label}
+            </Link>
+          )
+        }
+        return <span className="font-medium">{label}</span>
+      },
+    },
+    {
+      accessorKey: 'item_version',
+      header: 'Version',
+      cell: ({ row }) => row.original.item_version || '—',
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => (
+        <Badge variant={reportStatusVariant(row.original.status)}>
+          {row.original.status}
+        </Badge>
       ),
-  },
-  {
-    accessorKey: 'error_message',
-    header: 'Note',
-    cell: ({ row }) => (
-      <span className="line-clamp-2 max-w-xs text-sm text-muted-foreground md:max-w-md">
-        {row.original.error_message || '—'}
-      </span>
-    ),
-  },
-]
+    },
+    {
+      accessorKey: 'install_reason',
+      header: 'Reason',
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {formatInstallReason(row.original.install_reason)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'install_date',
+      header: 'Install time',
+      cell: ({ row }) =>
+        row.original.install_date ? (
+          <span suppressHydrationWarning className="text-sm">
+            {formatDateTime(row.original.install_date)}
+          </span>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      accessorKey: 'error_message',
+      header: 'Note',
+      cell: ({ row }) => (
+        <span className="line-clamp-2 max-w-xs text-sm text-muted-foreground md:max-w-md">
+          {row.original.error_message || '—'}
+        </span>
+      ),
+    },
+  ]
+}
 
 function SpecRow({
   icon: Icon,
@@ -169,6 +194,14 @@ export default function ReportingDevicePage() {
   const activeCheckinDays = useMemo(
     () => data?.checkin_history?.filter((d) => d.count > 0).length ?? 0,
     [data?.checkin_history],
+  )
+
+  const installReports = data?.install_reports ?? []
+  const { data: pkginfoLinks } =
+    usePkginfoLinksForInstallReports(installReports)
+  const reportColumns = useMemo(
+    () => makeReportColumns(pkginfoLinks),
+    [pkginfoLinks],
   )
 
   if (error) {
@@ -494,7 +527,7 @@ export default function ReportingDevicePage() {
         <div className="min-h-[200px]">
           <DataTable
             columns={reportColumns}
-            data={data?.install_reports ?? []}
+            data={installReports}
             pageCount={1}
             page={1}
             pageSize={500}

@@ -725,7 +725,7 @@ export default function DashboardPage() {
           <StatLinkCard
             href="/approvals"
             borderClass="border-l-gruvbox-yellow/50"
-            title="Import approvals"
+            title="Import Approvals"
             icon={CheckCircle}
             iconClass="text-gruvbox-yellow"
             footer="Import pipeline results awaiting review"

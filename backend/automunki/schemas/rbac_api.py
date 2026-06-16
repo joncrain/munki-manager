@@ -35,6 +35,7 @@ class RolePermissionsUpdate(BaseModel):
 
 class UserRolesRead(BaseModel):
     user_id: uuid.UUID
+    name: str
     email: str
     is_superuser: bool
     role_ids: list[uuid.UUID]

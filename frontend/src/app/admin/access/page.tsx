@@ -43,6 +43,7 @@ type RoleRead = {
 }
 type UserRolesRead = {
   user_id: string
+  name: string
   email: string
   is_superuser: boolean
   role_ids: string[]
@@ -118,6 +119,12 @@ function truncateWithEllipsis(s: string, max: number): string {
   return `${s.slice(0, max)}…`
 }
 
+function userDisplayName(name: string, email: string): string {
+  if (name.trim()) return name.trim()
+  const local = email.split('@')[0]
+  return local || email
+}
+
 export default function AdminAccessPage() {
   useDocumentTitle('Admin', 'Access')
   const { canRead, canWrite, loading, me } = useAuth()
@@ -170,6 +177,15 @@ export default function AdminAccessPage() {
 
   const userColumns = useMemo<ColumnDef<UserRolesRead>[]>(
     () => [
+      {
+        accessorKey: 'name',
+        header: 'Name',
+        cell: ({ row }) => (
+          <span className="font-medium">
+            {userDisplayName(row.original.name, row.original.email)}
+          </span>
+        ),
+      },
       {
         accessorKey: 'email',
         header: 'Email',

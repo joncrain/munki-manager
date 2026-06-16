@@ -428,7 +428,7 @@ export default function ApprovalsPage() {
             )}
           >
             <Package className={approvalsViewTabIconClass} aria-hidden />
-            import approvals
+            Import Approvals
             {pendingApprovals > 0 && (
               <Badge
                 variant="secondary"
@@ -445,7 +445,7 @@ export default function ApprovalsPage() {
             )}
           >
             <Shield className={approvalsViewTabIconClass} aria-hidden />
-            trust changes
+            Trust Changes
             {pendingTrust > 0 && (
               <Badge
                 variant="default"
@@ -462,7 +462,7 @@ export default function ApprovalsPage() {
             )}
           >
             <GitBranch className={approvalsViewTabIconClass} aria-hidden />
-            workflow
+            Workflows
           </TabsTrigger>
         </TabsList>
 
