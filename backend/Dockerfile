@@ -4,18 +4,20 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv
 
-# Copy the entire project before `pip install .` so hatchling can find the
-# `automunki/` package directory at build time. (Splitting pyproject.toml off
-# for layer caching is tempting but breaks the wheel build, which needs the
-# source tree to determine which files to ship.)
+# Copy lockfile and project metadata first for layer caching, then the rest.
+COPY pyproject.toml uv.lock ./
 COPY . .
 
 # Install with the [azure] extra so the Azure Blob storage backend
 # (azure-storage-blob, azure-identity) is available when STORAGE_BACKEND=azure_blob.
 # Local dev installs (uv sync) skip this extra by default; see pyproject.toml.
-RUN pip install --no-cache-dir ".[azure]"
+# --frozen ensures the lockfile is respected exactly (no version drift vs. local).
+RUN uv sync --frozen --extra azure --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
