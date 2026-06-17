@@ -163,6 +163,13 @@ export const router = createBrowserRouter([
             Component: m.default,
           })),
       },
+      {
+        path: 'admin/ai-insights',
+        lazy: () =>
+          import('@/app/admin/ai-insights/page').then((m) => ({
+            Component: m.default,
+          })),
+      },
     ],
   },
 ])

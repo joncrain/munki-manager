@@ -60,9 +60,23 @@ Optional but typical:
 github_token       = "ghp_..."
 github_repo        = "your-org/munki-recipes"
 local_runner_token = "<openssl rand -hex 32>"
+
+# Admin AI Insights (Gemini). Key from https://aistudio.google.com/apikey
+gemini_api_key   = "AIza..."
+insights_enabled = true
+# gemini_model   = "gemini-3.1-flash-lite-preview"  # optional override
 ```
 
 The `terraform.tfvars` file is gitignored — do not commit it.
+
+### Picking a `gemini_api_key`
+
+Admin AI Insights reads fleet/Munki data via Gemini tool calling. Create an API
+key at <https://aistudio.google.com/apikey>, set `gemini_api_key` and
+`insights_enabled = true` in `terraform.tfvars`, then `make tf-apply`.
+
+Like other app secrets, the Key Vault value is owned by Terraform — rotate by
+editing `terraform.tfvars`, not with `az keyvault secret set` alone.
 
 ### Picking a `github_token`
 
@@ -306,7 +320,7 @@ quicker.)
 | Tail backend logs | `make logs-backend` |
 | Tail frontend logs | `make logs-frontend` |
 | Open psql against prod | `make psql` |
-| Rotate a secret | Edit the corresponding variable in `terraform/terraform.tfvars` (e.g. `app_secret_key`, `github_token`, `postgres_admin_password`, `local_runner_token`), then `make tf-apply` to push it into Key Vault, then **force a new backend revision** with `az containerapp update -g rg-munkimanager -n ca-munkimanager-backend --revision-suffix kvref$(date +%s)`. A plain `az containerapp revision restart` does **not** re-resolve Key Vault references — Container Apps only re-fetches them when a new revision is created, so a restart leaves the old secret value in the container's env. Direct `az keyvault secret set` writes get overwritten the next time anyone runs `terraform apply` because `terraform/keyvault.tf` owns the secret value. |
+| Rotate a secret | Edit the corresponding variable in `terraform/terraform.tfvars` (e.g. `app_secret_key`, `github_token`, `gemini_api_key`, `postgres_admin_password`, `local_runner_token`), then `make tf-apply` to push it into Key Vault, then **force a new backend revision** with `az containerapp update -g rg-munkimanager -n ca-munkimanager-backend --revision-suffix kvref$(date +%s)`. A plain `az containerapp revision restart` does **not** re-resolve Key Vault references — Container Apps only re-fetches them when a new revision is created, so a restart leaves the old secret value in the container's env. Direct `az keyvault secret set` writes get overwritten the next time anyone runs `terraform apply` because `terraform/keyvault.tf` owns the secret value. |
 | Rotate the GitHub PAT | Update `github_token` in `terraform.tfvars` to the new classic PAT, `make tf-apply`, then force a new backend revision (command above). Sanity-check the budget with `curl -H "Authorization: Bearer $TOK" https://api.github.com/rate_limit` — `core.limit` should be 5000 (authenticated). For a classic PAT also confirm it can read `autopkg/*`: `curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $TOK" https://api.github.com/repos/autopkg/recipes` should return `200`. |
 | Tear it all down | `make tf-destroy` |
 

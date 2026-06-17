@@ -412,3 +412,35 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Markdown inside AI Insights assistant bubbles */
+.prose-chat {
+  @apply text-sm leading-relaxed;
+}
+.prose-chat :where(p) {
+  @apply my-2 first:mt-0 last:mb-0;
+}
+.prose-chat :where(ul, ol) {
+  @apply my-2 ml-4 list-outside;
+}
+.prose-chat :where(ul) {
+  @apply list-disc;
+}
+.prose-chat :where(ol) {
+  @apply list-decimal;
+}
+.prose-chat :where(li) {
+  @apply my-0.5;
+}
+.prose-chat :where(strong) {
+  @apply font-semibold;
+}
+.prose-chat :where(code) {
+  @apply rounded bg-muted px-1 py-0.5 font-mono text-xs;
+}
+.prose-chat :where(pre) {
+  @apply my-2 overflow-x-auto rounded-md bg-muted p-3 text-xs;
+}
+.prose-chat :where(pre code) {
+  @apply bg-transparent p-0;
+}

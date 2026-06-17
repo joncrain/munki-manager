@@ -122,6 +122,25 @@ variable "slack_webhook_url" {
   default     = ""
 }
 
+variable "gemini_api_key" {
+  description = "Google Gemini API key for Admin AI Insights. Leave empty to disable."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "insights_enabled" {
+  description = "Enable Admin AI Insights in the backend (requires gemini_api_key)."
+  type        = bool
+  default     = false
+}
+
+variable "gemini_model" {
+  description = "Gemini model id for Admin AI Insights."
+  type        = string
+  default     = "gemini-3.1-flash-lite-preview"
+}
+
 # --- Container Apps sizing -----------------------------------------------
 
 variable "backend_cpu" {

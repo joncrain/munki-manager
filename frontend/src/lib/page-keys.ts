@@ -13,6 +13,7 @@ export const PAGE_KEYS = {
   adminAudit: 'admin.audit',
   adminSettings: 'admin.settings',
   adminAccess: 'admin.access',
+  adminAiInsights: 'admin.ai_insights',
 } as const
 
 export type PageKey = (typeof PAGE_KEYS)[keyof typeof PAGE_KEYS]

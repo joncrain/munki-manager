@@ -111,6 +111,12 @@ resource "azurerm_container_app" "backend" {
     key_vault_secret_id = azurerm_key_vault_secret.slack_webhook_url.versionless_id
   }
 
+  secret {
+    name                = "gemini-api-key"
+    identity            = azurerm_user_assigned_identity.apps.id
+    key_vault_secret_id = azurerm_key_vault_secret.gemini_api_key.versionless_id
+  }
+
   # NOTE: `azure-storage-connection-string` secret was removed in the security
   # review (finding 2.3.2). The backend now uses managed identity to write to
   # the storage account; see `azurerm_role_assignment.apps_blob_writer` in
@@ -182,6 +188,18 @@ resource "azurerm_container_app" "backend" {
       env {
         name        = "SLACK_WEBHOOK_URL"
         secret_name = "slack-webhook-url"
+      }
+      env {
+        name        = "GEMINI_API_KEY"
+        secret_name = "gemini-api-key"
+      }
+      env {
+        name  = "INSIGHTS_ENABLED"
+        value = var.insights_enabled && var.gemini_api_key != "" ? "true" : "false"
+      }
+      env {
+        name  = "GEMINI_MODEL"
+        value = var.gemini_model
       }
       env {
         name  = "AUTH_MODE"

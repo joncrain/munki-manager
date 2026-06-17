@@ -174,7 +174,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (
         me &&
         Object.keys(me.permissions).length === 0 &&
-        pageKey !== PAGE_KEYS.adminAccess
+        pageKey !== PAGE_KEYS.adminAccess &&
+        pageKey !== PAGE_KEYS.adminAiInsights
       ) {
         return true
       }

@@ -14,6 +14,7 @@ import {
   Play,
   Settings,
   Shield,
+  Sparkles,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { Link, useLocation } from 'react-router-dom'
@@ -151,6 +152,12 @@ const navGroups: {
         label: 'Access',
         icon: Shield,
         pageKey: PAGE_KEYS.adminAccess,
+      },
+      {
+        href: '/admin/ai-insights',
+        label: 'AI Insights',
+        icon: Sparkles,
+        pageKey: PAGE_KEYS.adminAiInsights,
       },
     ],
   },

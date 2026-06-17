@@ -293,7 +293,7 @@ both Container Apps and is granted:
 - `Key Vault Secrets User` on the vault (`keyvault.tf:32-36`)
 
 Secrets in Key Vault: `app-secret-key`, `postgres-password`, `database-url`,
-`github-token`, `local-runner-token`, `slack-webhook-url`,
+`github-token`, `local-runner-token`, `slack-webhook-url`, `gemini-api-key`,
 `azure-storage-connection-string`. Container Apps fetches them as
 `secret { ... key_vault_secret_id = ... }` references.
 

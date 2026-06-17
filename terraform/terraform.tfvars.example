@@ -33,6 +33,11 @@ local_runner_token = ""
 # Slack notifications.
 slack_webhook_url = ""
 
+# Admin AI Insights (Gemini). Create a key at https://aistudio.google.com/apikey
+# gemini_api_key    = "AIza..."
+# insights_enabled  = true
+# gemini_model      = "gemini-3.1-flash-lite-preview"
+
 # Operator IPs that may reach the storage account control plane (for `az
 # storage` commands AND for `terraform plan/apply` state-refresh reads).
 # The Container Apps env's outbound IP is added automatically — only list

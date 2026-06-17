@@ -92,6 +92,13 @@ resource "azurerm_key_vault_secret" "slack_webhook_url" {
   depends_on   = [azurerm_role_assignment.operator_kv_admin]
 }
 
+resource "azurerm_key_vault_secret" "gemini_api_key" {
+  name         = "gemini-api-key"
+  value        = var.gemini_api_key == "" ? "unset" : var.gemini_api_key
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_role_assignment.operator_kv_admin]
+}
+
 # NOTE: The storage account access key (`primary_connection_string`) used to
 # be mirrored into Key Vault here as `azure-storage-connection-string`.
 # Removed as part of the security review (finding 2.3.2): the backend now

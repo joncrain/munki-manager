@@ -909,3 +909,30 @@ export async function redeemEnrollmentProfile(
   }
   return res.blob()
 }
+
+export interface InsightsHistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface InsightsQueryRequest {
+  question: string
+  history?: InsightsHistoryMessage[]
+}
+
+export interface InsightsToolUsed {
+  name: string
+  args: Record<string, unknown>
+  summary: string
+}
+
+export interface InsightsTableData {
+  columns: string[]
+  rows: (string | number | null)[][]
+}
+
+export interface InsightsQueryResponse {
+  answer: string
+  tools_used: InsightsToolUsed[]
+  data?: InsightsTableData | null
+}

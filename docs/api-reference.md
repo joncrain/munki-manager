@@ -230,6 +230,13 @@ Includes **`device_image_url`**: a PNG URL from Apple’s public `statici.icloud
 | GET | `/audit` | List audit entries (paginated, filterable) |
 | GET | `/audit/{entity_type}/{entity_id}` | Get audit trail for an entity |
 
+### AI Insights (admin only — requires `admin.ai_insights`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/insights/query` | Natural-language fleet/Munki Q&A via Gemini tool calling. Requires `INSIGHTS_ENABLED=true` and `GEMINI_API_KEY`. |
+| POST | `/insights/query/stream` | Same as above, streamed as SSE (`text-delta`, `tool`, `data`, `done` events). |
+
 ### Query Parameters for GET /audit
 
 | Param | Type | Description |

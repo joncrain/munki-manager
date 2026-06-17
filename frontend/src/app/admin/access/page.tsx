@@ -86,6 +86,7 @@ const PAGE_GROUPS: {
       PAGE_KEYS.adminAudit,
       PAGE_KEYS.adminSettings,
       PAGE_KEYS.adminAccess,
+      PAGE_KEYS.adminAiInsights,
     ],
   },
 ]
