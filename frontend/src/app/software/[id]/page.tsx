@@ -77,6 +77,7 @@ import {
 } from '@/lib/api'
 import { parseCatalogListInput } from '@/lib/autopkg-recipe'
 import { formatDate, formatDateTime, formatInstallReason } from '@/lib/format'
+import { looseVersionSortingFn } from '@/lib/loose-version'
 import { munkiAccents } from '@/lib/munki-accents'
 import { PAGE_KEYS } from '@/lib/page-keys'
 import { publicApiBaseUrl } from '@/lib/public-api-base'
@@ -110,6 +111,7 @@ const SOFTWARE_INSTALL_REPORT_COLUMNS: ColumnDef<ClientInstallReportListItem>[] 
     {
       accessorKey: 'item_version',
       header: 'Version',
+      sortingFn: looseVersionSortingFn,
       cell: ({ row }) => row.original.item_version || '—',
     },
     {

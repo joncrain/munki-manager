@@ -30,6 +30,7 @@ from automunki.schemas.munki import (
     PromoteRequest,
 )
 from automunki.services.audit import create_audit_entry
+from automunki.services.loose_version import loose_version_key
 from automunki.services.munki import compile_pkginfo_plist
 from automunki.services.promotion import (
     build_pkginfo_channel_promotion_status,
@@ -180,13 +181,33 @@ async def list_pkginfo(
     count_query = select(func.count()).select_from(query.subquery())
     total = (await session.execute(count_query)).scalar() or 0
 
-    sort_col = getattr(PkgInfo, sort_by, PkgInfo.name)
-    query = query.order_by(sort_col.asc() if sort_order == "asc" else sort_col.desc())
-    query = query.offset((page - 1) * page_size).limit(page_size)
-    query = query.options(selectinload(PkgInfo.catalogs))
+    if sort_by == "version":
+        id_version_result = await session.execute(query.with_only_columns(PkgInfo.id, PkgInfo.version))
+        id_version_rows = id_version_result.all()
+        reverse = sort_order != "asc"
+        sorted_rows = sorted(
+            id_version_rows,
+            key=lambda row: loose_version_key(row.version),
+            reverse=reverse,
+        )
+        page_rows = sorted_rows[(page - 1) * page_size : page * page_size]
+        page_ids = [row.id for row in page_rows]
+        if not page_ids:
+            items = []
+        else:
+            page_result = await session.execute(
+                select(PkgInfo).where(PkgInfo.id.in_(page_ids)).options(selectinload(PkgInfo.catalogs))
+            )
+            pkg_by_id = {p.id: p for p in page_result.scalars().unique().all()}
+            items = [PkgInfoSummary(**_to_summary(pkg_by_id[pkg_id])) for pkg_id in page_ids if pkg_id in pkg_by_id]
+    else:
+        sort_col = getattr(PkgInfo, sort_by, PkgInfo.name)
+        query = query.order_by(sort_col.asc() if sort_order == "asc" else sort_col.desc())
+        query = query.offset((page - 1) * page_size).limit(page_size)
+        query = query.options(selectinload(PkgInfo.catalogs))
 
-    result = await session.execute(query)
-    items = [PkgInfoSummary(**_to_summary(p)) for p in result.scalars().unique().all()]
+        result = await session.execute(query)
+        items = [PkgInfoSummary(**_to_summary(p)) for p in result.scalars().unique().all()]
 
     return PaginatedResponse(
         items=items,

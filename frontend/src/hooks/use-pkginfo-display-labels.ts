@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { api, type PaginatedResponse, type PkgInfoSummary } from '@/lib/api'
+import { sortByLooseVersion } from '@/lib/loose-version'
 import { parseManifestItemRef } from '@/lib/manifest-item-ref'
 
 /** Resolve manifest item refs (incl. pinned `name-version`) to pkginfo display_name. */
@@ -53,7 +54,7 @@ export interface PkginfoInstallReportLink {
   pkginfoId: string | null
 }
 
-function installReportLinkKey(name: string, version: string | null) {
+export function installReportLinkKey(name: string, version: string | null) {
   return `${name}\0${version ?? ''}`
 }
 
@@ -92,7 +93,11 @@ export function usePkginfoLinksForInstallReports(
         const sep = key.indexOf('\0')
         const name = sep >= 0 ? key.slice(0, sep) : key
         const version = sep >= 0 ? key.slice(sep + 1) : ''
-        const versions = byName[name] ?? []
+        const versions = sortByLooseVersion(
+          byName[name] ?? [],
+          (item) => item.version,
+          'desc',
+        )
         const match = version
           ? versions.find((v) => v.version === version)
           : versions[0]

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ListChecks, X } from 'lucide-react'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
 import { PageHeading } from '@/components/page-heading'
@@ -17,11 +18,16 @@ import {
 } from '@/components/ui/select'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import {
+  installReportLinkKey,
+  usePkginfoLinksForInstallReports,
+} from '@/hooks/use-pkginfo-display-labels'
+import {
   api,
   type ClientInstallReportListItem,
   type PaginatedResponse,
 } from '@/lib/api'
 import { formatDateTime, formatInstallReason } from '@/lib/format'
+import { looseVersionSortingFn } from '@/lib/loose-version'
 
 const STATUS_OPTIONS = [
   'installed',
@@ -45,89 +51,98 @@ function statusVariant(status: string) {
   }
 }
 
-const columns: ColumnDef<ClientInstallReportListItem>[] = [
-  {
-    accessorKey: 'created_at',
-    header: 'Reported',
-    cell: ({ row }) => (
-      <span suppressHydrationWarning className="text-sm">
-        {formatDateTime(row.original.created_at)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'item_name',
-    header: 'Item',
-    cell: ({ row }) => (
-      <span className="font-medium">{row.original.item_name || '—'}</span>
-    ),
-  },
-  {
-    accessorKey: 'item_version',
-    header: 'Version',
-    cell: ({ row }) => row.original.item_version || '—',
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => (
-      <Badge variant={statusVariant(row.original.status)}>
-        {row.original.status}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: 'install_reason',
-    header: 'Reason',
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">
-        {formatInstallReason(row.original.install_reason)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'hostname',
-    header: 'Device',
-    cell: ({ row }) => (
-      <Link
-        to={`/reporting/devices/${row.original.machine_id}`}
-        className="text-primary underline-offset-4 hover:underline"
-      >
-        {row.original.hostname || row.original.serial_number || '—'}
-      </Link>
-    ),
-  },
-  {
-    accessorKey: 'serial_number',
-    header: 'Serial',
-    cell: ({ row }) => (
-      <span className="font-mono text-xs text-muted-foreground">
-        {row.original.serial_number || '—'}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'install_date',
-    header: 'Install time',
-    cell: ({ row }) =>
-      row.original.install_date ? (
+function makeColumns(
+  links:
+    | Record<string, { displayName: string; pkginfoId: string | null }>
+    | undefined,
+): ColumnDef<ClientInstallReportListItem>[] {
+  return [
+    {
+      accessorKey: 'created_at',
+      header: 'Reported',
+      cell: ({ row }) => (
         <span suppressHydrationWarning className="text-sm">
-          {formatDateTime(row.original.install_date)}
+          {formatDateTime(row.original.created_at)}
         </span>
-      ) : (
-        '—'
       ),
-  },
-  {
-    accessorKey: 'error_message',
-    header: 'Note',
-    cell: ({ row }) => (
-      <span className="line-clamp-2 max-w-[240px] text-sm text-muted-foreground">
-        {row.original.error_message || '—'}
-      </span>
-    ),
-  },
-]
+    },
+    {
+      accessorKey: 'item_name',
+      header: 'Item',
+      cell: ({ row }) => {
+        const { item_name, item_version } = row.original
+        if (!item_name) return '—'
+        const link = links?.[installReportLinkKey(item_name, item_version)]
+        const label = link?.displayName ?? item_name
+        if (link?.pkginfoId) {
+          return (
+            <Link
+              to={`/software/${link.pkginfoId}`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              {label}
+            </Link>
+          )
+        }
+        return <span className="font-medium">{label}</span>
+      },
+    },
+    {
+      accessorKey: 'item_version',
+      header: 'Version',
+      sortingFn: looseVersionSortingFn,
+      cell: ({ row }) => row.original.item_version || '—',
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => (
+        <Badge variant={statusVariant(row.original.status)}>
+          {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: 'install_reason',
+      header: 'Reason',
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {formatInstallReason(row.original.install_reason)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'hostname',
+      header: 'Device',
+      cell: ({ row }) => (
+        <Link
+          to={`/reporting/devices/${row.original.machine_id}`}
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          {row.original.hostname || row.original.serial_number || '—'}
+        </Link>
+      ),
+    },
+    {
+      accessorKey: 'serial_number',
+      header: 'Serial',
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-muted-foreground">
+          {row.original.serial_number || '—'}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'error_message',
+      header: 'Note',
+      cell: ({ row }) => (
+        <span className="line-clamp-2 max-w-[240px] text-sm text-muted-foreground">
+          {row.original.error_message || '—'}
+        </span>
+      ),
+    },
+  ]
+}
 
 export default function ReportingInstallsPage() {
   useDocumentTitle('Reporting', 'Installs')
@@ -141,27 +156,26 @@ export default function ReportingInstallsPage() {
     'status',
     parseAsString.withDefault(''),
   )
-  const [itemName, setItemName] = useQueryState(
-    'item_name',
-    parseAsString.withDefault(''),
-  )
 
   const { data, isLoading } = useQuery({
-    queryKey: ['reports-installs', page, pageSize, search, status, itemName],
+    queryKey: ['reports-installs', page, pageSize, search, status],
     queryFn: () => {
       const params = new URLSearchParams()
       params.set('page', String(page))
       params.set('page_size', String(pageSize))
       if (search.trim()) params.set('search', search.trim())
       if (status.trim()) params.set('status', status.trim())
-      if (itemName.trim()) params.set('item_name', itemName.trim())
       return api.get<PaginatedResponse<ClientInstallReportListItem>>(
         `/reports/installs?${params.toString()}`,
       )
     },
   })
 
-  const hasFilters = Boolean(search.trim() || status.trim() || itemName.trim())
+  const rows = data?.items ?? []
+  const { data: pkginfoLinks } = usePkginfoLinksForInstallReports(rows)
+  const columns = useMemo(() => makeColumns(pkginfoLinks), [pkginfoLinks])
+
+  const hasFilters = Boolean(search.trim() || status.trim())
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
@@ -172,22 +186,11 @@ export default function ReportingInstallsPage() {
           <code className="rounded bg-muted px-1 py-0.5 text-xs">
             client_install_report
           </code>
-          ). New events are appended when the agent reports them; empty Munki
-          runs no longer clear prior rows.
+          ).
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Exact Munki item name (optional)"
-          value={itemName}
-          onChange={(e) => {
-            setItemName(e.target.value || null)
-            setPage(1)
-          }}
-          className="max-w-[220px]"
-          aria-label="Filter by exact item name"
-        />
         <Input
           placeholder="Search item, hostname, or serial…"
           value={search}
@@ -225,7 +228,6 @@ export default function ReportingInstallsPage() {
             onClick={() => {
               setSearch(null)
               setStatus(null)
-              setItemName(null)
               setPage(1)
             }}
           >
@@ -238,7 +240,7 @@ export default function ReportingInstallsPage() {
       <div className="min-h-0 flex-1">
         <DataTable
           columns={columns}
-          data={data?.items ?? []}
+          data={rows}
           pageCount={data?.total_pages ?? 1}
           page={page}
           pageSize={pageSize}

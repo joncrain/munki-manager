@@ -39,7 +39,10 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDocumentTitle } from '@/hooks/use-document-title'
-import { usePkginfoLinksForInstallReports } from '@/hooks/use-pkginfo-display-labels'
+import {
+  installReportLinkKey,
+  usePkginfoLinksForInstallReports,
+} from '@/hooks/use-pkginfo-display-labels'
 import {
   api,
   type ClientInstallReportRow,
@@ -50,6 +53,7 @@ import {
   formatInstallReason,
   formatRelativeTimeAgo,
 } from '@/lib/format'
+import { looseVersionSortingFn } from '@/lib/loose-version'
 import { munkiAccents } from '@/lib/munki-accents'
 import { cn } from '@/lib/utils'
 
@@ -65,10 +69,6 @@ function reportStatusVariant(status: string) {
     default:
       return 'outline' as const
   }
-}
-
-function installReportLinkKey(name: string, version: string | null) {
-  return `${name}\0${version ?? ''}`
 }
 
 function makeReportColumns(
@@ -101,6 +101,7 @@ function makeReportColumns(
     {
       accessorKey: 'item_version',
       header: 'Version',
+      sortingFn: looseVersionSortingFn,
       cell: ({ row }) => row.original.item_version || '—',
     },
     {
