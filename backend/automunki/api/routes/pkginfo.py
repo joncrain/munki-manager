@@ -32,6 +32,10 @@ from automunki.schemas.munki import (
 from automunki.services.audit import create_audit_entry
 from automunki.services.loose_version import loose_version_key
 from automunki.services.munki import compile_pkginfo_plist
+from automunki.services.pkginfo_latest import (
+    fetch_latest_version_by_name,
+    is_latest_version,
+)
 from automunki.services.promotion import (
     build_pkginfo_channel_promotion_status,
     list_channel_promotion_queue_items,
@@ -77,7 +81,7 @@ router = APIRouter(prefix="/pkginfo", tags=["pkginfo"])
 INSTALL_REPORT_TIMELINE_DAYS = 90
 
 
-def _to_summary(pkg: PkgInfo) -> dict:
+def _to_summary(pkg: PkgInfo, *, is_latest: bool = False) -> dict:
     return {
         "id": pkg.id,
         "name": pkg.name,
@@ -93,6 +97,7 @@ def _to_summary(pkg: PkgInfo) -> dict:
         "installer_type": pkg.installer_type,
         "restart_action": pkg.restart_action,
         "pending_metadata": pkg.pending_metadata,
+        "is_latest": is_latest,
         "created_at": pkg.created_at,
         "updated_at": pkg.updated_at,
     }
@@ -164,6 +169,7 @@ async def list_pkginfo(
     catalog: str | None = None,
     category: str | None = None,
     name: str | None = None,
+    latest_only: bool = False,
     sort_by: str = "name",
     sort_order: str = "asc",
 ):
@@ -177,6 +183,21 @@ async def list_pkginfo(
         query = query.where(PkgInfo.name == name)
     if catalog:
         query = query.join(PkgInfoCatalog).join(Catalog).where(Catalog.name == catalog)
+
+    latest_by_name = await fetch_latest_version_by_name(session)
+
+    if latest_only:
+        matching = await session.execute(query.with_only_columns(PkgInfo.id, PkgInfo.name, PkgInfo.version))
+        latest_ids = [row.id for row in matching.all() if is_latest_version(row.name, row.version, latest_by_name)]
+        if not latest_ids:
+            return PaginatedResponse(
+                items=[],
+                total=0,
+                page=page,
+                page_size=page_size,
+                total_pages=0,
+            )
+        query = query.where(PkgInfo.id.in_(latest_ids))
 
     count_query = select(func.count()).select_from(query.subquery())
     total = (await session.execute(count_query)).scalar() or 0
@@ -199,7 +220,20 @@ async def list_pkginfo(
                 select(PkgInfo).where(PkgInfo.id.in_(page_ids)).options(selectinload(PkgInfo.catalogs))
             )
             pkg_by_id = {p.id: p for p in page_result.scalars().unique().all()}
-            items = [PkgInfoSummary(**_to_summary(pkg_by_id[pkg_id])) for pkg_id in page_ids if pkg_id in pkg_by_id]
+            items = [
+                PkgInfoSummary(
+                    **_to_summary(
+                        pkg_by_id[pkg_id],
+                        is_latest=is_latest_version(
+                            pkg_by_id[pkg_id].name,
+                            pkg_by_id[pkg_id].version,
+                            latest_by_name,
+                        ),
+                    )
+                )
+                for pkg_id in page_ids
+                if pkg_id in pkg_by_id
+            ]
     else:
         sort_col = getattr(PkgInfo, sort_by, PkgInfo.name)
         query = query.order_by(sort_col.asc() if sort_order == "asc" else sort_col.desc())
@@ -207,14 +241,22 @@ async def list_pkginfo(
         query = query.options(selectinload(PkgInfo.catalogs))
 
         result = await session.execute(query)
-        items = [PkgInfoSummary(**_to_summary(p)) for p in result.scalars().unique().all()]
+        items = [
+            PkgInfoSummary(
+                **_to_summary(
+                    p,
+                    is_latest=is_latest_version(p.name, p.version, latest_by_name),
+                )
+            )
+            for p in result.scalars().unique().all()
+        ]
 
     return PaginatedResponse(
         items=items,
         total=total,
         page=page,
         page_size=page_size,
-        total_pages=(total + page_size - 1) // page_size,
+        total_pages=(total + page_size - 1) // page_size if total else 0,
     )
 
 

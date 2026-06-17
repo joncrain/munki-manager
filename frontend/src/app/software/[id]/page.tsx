@@ -16,11 +16,22 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import { DataTable } from '@/components/data-table'
+import {
+  LatestVersionBadge,
+  VersionWithLatestBadge,
+} from '@/components/latest-version-badge'
 import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
 import { SoftwareInstallTimelineChart } from '@/components/reporting/software-install-timeline-chart'
 import { SoftwareIcon } from '@/components/software-icon'
@@ -97,77 +108,85 @@ function softwareInstallReportStatusVariant(status: string) {
   }
 }
 
-const SOFTWARE_INSTALL_REPORT_COLUMNS: ColumnDef<ClientInstallReportListItem>[] =
-  [
-    {
-      accessorKey: 'created_at',
-      header: 'Reported',
-      cell: ({ row }) => (
+const makeSoftwareInstallReportColumns = (
+  latestVersion: string | undefined,
+): ColumnDef<ClientInstallReportListItem>[] => [
+  {
+    accessorKey: 'created_at',
+    header: 'Reported',
+    cell: ({ row }) => (
+      <span suppressHydrationWarning className="text-sm">
+        {formatDateTime(row.original.created_at)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: 'item_version',
+    header: 'Version',
+    sortingFn: looseVersionSortingFn,
+    cell: ({ row }) => (
+      <VersionWithLatestBadge
+        version={row.original.item_version}
+        isLatest={
+          !!row.original.item_version &&
+          !!latestVersion &&
+          row.original.item_version === latestVersion
+        }
+      />
+    ),
+  },
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    cell: ({ row }) => (
+      <Badge variant={softwareInstallReportStatusVariant(row.original.status)}>
+        {row.original.status}
+      </Badge>
+    ),
+  },
+  {
+    accessorKey: 'install_reason',
+    header: 'Reason',
+    cell: ({ row }) => (
+      <span className="text-sm text-muted-foreground">
+        {formatInstallReason(row.original.install_reason)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: 'hostname',
+    header: 'Device',
+    cell: ({ row }) => (
+      <Link
+        to={`/reporting/devices/${row.original.machine_id}`}
+        className="text-primary underline-offset-4 hover:underline"
+      >
+        {row.original.hostname || row.original.serial_number || '—'}
+      </Link>
+    ),
+  },
+  {
+    accessorKey: 'install_date',
+    header: 'Install time',
+    cell: ({ row }) =>
+      row.original.install_date ? (
         <span suppressHydrationWarning className="text-sm">
-          {formatDateTime(row.original.created_at)}
+          {formatDateTime(row.original.install_date)}
         </span>
+      ) : (
+        '—'
       ),
-    },
-    {
-      accessorKey: 'item_version',
-      header: 'Version',
-      sortingFn: looseVersionSortingFn,
-      cell: ({ row }) => row.original.item_version || '—',
-    },
-    {
-      accessorKey: 'status',
-      header: 'Status',
-      cell: ({ row }) => (
-        <Badge
-          variant={softwareInstallReportStatusVariant(row.original.status)}
-        >
-          {row.original.status}
-        </Badge>
-      ),
-    },
-    {
-      accessorKey: 'install_reason',
-      header: 'Reason',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {formatInstallReason(row.original.install_reason)}
-        </span>
-      ),
-    },
-    {
-      accessorKey: 'hostname',
-      header: 'Device',
-      cell: ({ row }) => (
-        <Link
-          to={`/reporting/devices/${row.original.machine_id}`}
-          className="text-primary underline-offset-4 hover:underline"
-        >
-          {row.original.hostname || row.original.serial_number || '—'}
-        </Link>
-      ),
-    },
-    {
-      accessorKey: 'install_date',
-      header: 'Install time',
-      cell: ({ row }) =>
-        row.original.install_date ? (
-          <span suppressHydrationWarning className="text-sm">
-            {formatDateTime(row.original.install_date)}
-          </span>
-        ) : (
-          '—'
-        ),
-    },
-    {
-      accessorKey: 'error_message',
-      header: 'Note',
-      cell: ({ row }) => (
-        <span className="line-clamp-2 max-w-[240px] text-sm text-muted-foreground">
-          {row.original.error_message || '—'}
-        </span>
-      ),
-    },
-  ]
+  },
+  {
+    accessorKey: 'error_message',
+    header: 'Note',
+    cell: ({ row }) => (
+      <span className="line-clamp-2 max-w-[240px] text-sm text-muted-foreground">
+        {row.original.error_message || '—'}
+      </span>
+    ),
+  },
+]
 
 const softwareDetailTabContentClass = cn(
   'space-y-4',
@@ -379,6 +398,14 @@ export default function SoftwareDetailPage() {
     [versionsData?.items],
   )
   const hasMultipleVersions = siblingVersions.length > 1
+  const latestVersion = siblingVersions[0]?.version
+  const isViewingLatest =
+    !!pkg && (!latestVersion || pkg.version === latestVersion)
+
+  const installReportColumns = useMemo(
+    () => makeSoftwareInstallReportColumns(latestVersion),
+    [latestVersion],
+  )
 
   const pendingSharedPayload = useMemo(
     () => (pendingSavePayload ? filterSharedPayload(pendingSavePayload) : null),
@@ -681,12 +708,20 @@ export default function SoftwareDetailPage() {
                           value={v.id}
                           className="font-mono"
                         >
-                          {v.version}
-                          {v.id === id ? ' (viewing)' : ''}
+                          <span className="inline-flex items-center gap-1.5">
+                            <span>{v.version}</span>
+                            {v.is_latest ? <LatestVersionBadge /> : null}
+                            {v.id === id ? (
+                              <span className="text-xs text-muted-foreground">
+                                (viewing)
+                              </span>
+                            ) : null}
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {isViewingLatest ? <LatestVersionBadge /> : null}
                   <Badge
                     variant="outline"
                     className="h-6 px-2 text-[11px] font-normal"
@@ -699,11 +734,12 @@ export default function SoftwareDetailPage() {
                   <span aria-hidden className="text-muted-foreground/50">
                     &mdash;
                   </span>
-                  <span>
+                  <span className="inline-flex items-center gap-1.5">
                     Version{' '}
                     <span className="font-mono text-foreground/90">
                       {pkg.version}
                     </span>
+                    {isViewingLatest ? <LatestVersionBadge /> : null}
                   </span>
                 </>
               )}
@@ -961,7 +997,20 @@ export default function SoftwareDetailPage() {
                   editing={effectiveEditing}
                   onChange={(v) => updateField('display_name', v)}
                 />
-                <ReadOnlyField label="Version" value={pkg.version} />
+                <ReadOnlyField
+                  label="Version"
+                  value={
+                    isViewingLatest ? (
+                      <VersionWithLatestBadge
+                        version={pkg.version}
+                        isLatest
+                        versionClassName="text-foreground"
+                      />
+                    ) : (
+                      pkg.version
+                    )
+                  }
+                />
                 <EditableField
                   label="Category"
                   value={form?.category ?? ''}
@@ -1707,7 +1756,7 @@ export default function SoftwareDetailPage() {
                 </CardHeader>
                 <CardContent className="px-0 sm:px-6">
                   <DataTable
-                    columns={SOFTWARE_INSTALL_REPORT_COLUMNS}
+                    columns={installReportColumns}
                     data={installReportRows?.items ?? []}
                     pageCount={installReportRows?.total_pages ?? 1}
                     page={installReportPage}
@@ -1767,17 +1816,11 @@ export default function SoftwareDetailPage() {
 
 /* ── Shared Field Components ── */
 
-function ReadOnlyField({
-  label,
-  value,
-}: {
-  label: string
-  value: string | null | undefined
-}) {
+function ReadOnlyField({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <span className="text-sm font-medium text-muted-foreground">{label}</span>
-      <p className="mt-1 truncate">{value || '—'}</p>
+      <div className="mt-1 truncate">{value || '—'}</div>
     </div>
   )
 }

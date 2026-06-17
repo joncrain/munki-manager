@@ -258,6 +258,7 @@ class PkgInfoSummary(BaseModel):
     installer_type: str | None = None
     restart_action: str | None = None
     pending_metadata: bool = False
+    is_latest: bool = False
     created_at: datetime
     updated_at: datetime
 

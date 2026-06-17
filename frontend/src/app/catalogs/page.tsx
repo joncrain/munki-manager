@@ -15,6 +15,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import { DataTable } from '@/components/data-table'
+import { VersionWithLatestBadge } from '@/components/latest-version-badge'
 import { PageHeading } from '@/components/page-heading'
 import { CatalogSoftwareAvatarCircles } from '@/components/software-avatar-circles'
 import { SoftwareIcon } from '@/components/software-icon'
@@ -741,7 +742,14 @@ function CatalogDetailDialog({
                         {item.display_name || item.name}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {item.name} — {item.version}
+                        {item.name}
+                        {' — '}
+                        <VersionWithLatestBadge
+                          version={item.version}
+                          isLatest={item.is_latest}
+                          className="inline-flex"
+                          versionClassName="text-xs"
+                        />
                       </p>
                     </div>
                     {item.category && (

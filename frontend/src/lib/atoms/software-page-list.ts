@@ -2,12 +2,13 @@ import type { SortingState } from '@tanstack/react-table'
 import { atomWithStorage } from 'jotai/utils'
 import type { SyncStorage } from 'jotai/vanilla/utils/atomWithStorage'
 
-const STORAGE_KEY = 'munki-manager-software-page-list-v1'
+const STORAGE_KEY = 'munki-manager-software-page-list-v2'
 
 export type SoftwarePageListState = {
   search: string
   category: string
   catalog: string
+  latestOnly: boolean
   page: number
   pageSize: number
   sorting: SortingState
@@ -17,6 +18,7 @@ export const defaultSoftwarePageListState: SoftwarePageListState = {
   search: '',
   category: '',
   catalog: '',
+  latestOnly: true,
   page: 1,
   pageSize: 50,
   sorting: [{ id: 'display_name', desc: false }],
@@ -35,6 +37,7 @@ function safeParseListState(
     if (typeof o.search === 'string') out.search = o.search
     if (typeof o.category === 'string') out.category = o.category
     if (typeof o.catalog === 'string') out.catalog = o.catalog
+    if (typeof o.latestOnly === 'boolean') out.latestOnly = o.latestOnly
     if (typeof o.page === 'number' && o.page >= 1) out.page = o.page
     if (typeof o.pageSize === 'number' && o.pageSize >= 1)
       out.pageSize = o.pageSize

@@ -17,6 +17,7 @@ from automunki.schemas.munki import (
 )
 from automunki.services.audit import create_audit_entry
 from automunki.services.munki import compile_catalog_plist
+from automunki.services.pkginfo_latest import fetch_latest_version_by_name, is_latest_version
 
 router = APIRouter(prefix="/catalogs", tags=["catalogs"])
 
@@ -265,6 +266,7 @@ async def list_catalog_items(
         .order_by(PkgInfo.name)
     )
     items = result.scalars().unique().all()
+    latest_by_name = await fetch_latest_version_by_name(session)
     return [
         PkgInfoSummary(
             id=p.id,
@@ -276,6 +278,7 @@ async def list_catalog_items(
             developer=p.developer,
             catalog_names=[c.name for c in p.catalogs],
             unattended_install=p.unattended_install,
+            is_latest=is_latest_version(p.name, p.version, latest_by_name),
             created_at=p.created_at,
             updated_at=p.updated_at,
         )

@@ -17,6 +17,7 @@ import { useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { DataTable } from '@/components/data-table'
+import { VersionWithLatestBadge } from '@/components/latest-version-badge'
 import { DeviceCheckinsChart } from '@/components/reporting/device-checkins-chart'
 import { MacDeviceHeroVisual } from '@/components/reporting/mac-device-visual'
 import { Badge } from '@/components/ui/badge'
@@ -73,7 +74,10 @@ function reportStatusVariant(status: string) {
 
 function makeReportColumns(
   links:
-    | Record<string, { displayName: string; pkginfoId: string | null }>
+    | Record<
+        string,
+        { displayName: string; pkginfoId: string | null; isLatest: boolean }
+      >
     | undefined,
 ): ColumnDef<ClientInstallReportRow>[] {
   return [
@@ -102,7 +106,18 @@ function makeReportColumns(
       accessorKey: 'item_version',
       header: 'Version',
       sortingFn: looseVersionSortingFn,
-      cell: ({ row }) => row.original.item_version || '—',
+      cell: ({ row }) => {
+        const { item_name, item_version } = row.original
+        const link = item_name
+          ? links?.[installReportLinkKey(item_name, item_version)]
+          : undefined
+        return (
+          <VersionWithLatestBadge
+            version={item_version}
+            isLatest={link?.isLatest}
+          />
+        )
+      },
     },
     {
       accessorKey: 'status',

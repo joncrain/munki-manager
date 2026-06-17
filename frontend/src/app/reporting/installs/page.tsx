@@ -5,6 +5,7 @@ import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
+import { VersionWithLatestBadge } from '@/components/latest-version-badge'
 import { PageHeading } from '@/components/page-heading'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -53,7 +54,10 @@ function statusVariant(status: string) {
 
 function makeColumns(
   links:
-    | Record<string, { displayName: string; pkginfoId: string | null }>
+    | Record<
+        string,
+        { displayName: string; pkginfoId: string | null; isLatest: boolean }
+      >
     | undefined,
 ): ColumnDef<ClientInstallReportListItem>[] {
   return [
@@ -91,7 +95,18 @@ function makeColumns(
       accessorKey: 'item_version',
       header: 'Version',
       sortingFn: looseVersionSortingFn,
-      cell: ({ row }) => row.original.item_version || '—',
+      cell: ({ row }) => {
+        const { item_name, item_version } = row.original
+        const link = item_name
+          ? links?.[installReportLinkKey(item_name, item_version)]
+          : undefined
+        return (
+          <VersionWithLatestBadge
+            version={item_version}
+            isLatest={link?.isLatest}
+          />
+        )
+      },
     },
     {
       accessorKey: 'status',

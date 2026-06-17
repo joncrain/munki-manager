@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
+import { VersionWithLatestBadge } from '@/components/latest-version-badge'
 import { PageHeading } from '@/components/page-heading'
 import { SoftwareIcon } from '@/components/software-icon'
 import { SoftwareUploadDialog } from '@/components/software-upload-dialog'
@@ -34,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import {
   api,
@@ -83,7 +85,10 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
     accessorKey: 'version',
     header: 'Version',
     cell: ({ row }) => (
-      <span className="font-mono text-sm">{row.original.version}</span>
+      <VersionWithLatestBadge
+        version={row.original.version}
+        isLatest={row.original.is_latest}
+      />
     ),
   },
   {
@@ -196,7 +201,8 @@ export default function SoftwarePage() {
   useDocumentTitle('Munki', 'Software')
 
   const [listState, setListState] = useAtom(softwarePageListAtom)
-  const { search, category, catalog, page, pageSize, sorting } = listState
+  const { search, category, catalog, latestOnly, page, pageSize, sorting } =
+    listState
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     DEFAULT_COLUMN_VISIBILITY,
   )
@@ -308,6 +314,7 @@ export default function SoftwarePage() {
       search,
       category,
       catalog,
+      latestOnly,
       sortBy,
       sortOrder,
     ],
@@ -320,6 +327,7 @@ export default function SoftwarePage() {
       if (search) params.set('search', search)
       if (category) params.set('category', category)
       if (catalog) params.set('catalog', catalog)
+      if (latestOnly) params.set('latest_only', 'true')
       return api.get<PaginatedResponse<PkgInfoSummary>>(
         `/pkginfo?${params.toString()}`,
       )
@@ -443,6 +451,26 @@ export default function SoftwarePage() {
               Clear
             </Button>
           )}
+
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
+            <Switch
+              id="software-latest-only"
+              checked={latestOnly}
+              onCheckedChange={(checked) => {
+                setListState((p) => ({
+                  ...p,
+                  latestOnly: checked,
+                  page: 1,
+                }))
+              }}
+            />
+            <Label
+              htmlFor="software-latest-only"
+              className="cursor-pointer text-sm font-normal"
+            >
+              Latest only
+            </Label>
+          </div>
         </div>
 
         <div className="ml-auto shrink-0">

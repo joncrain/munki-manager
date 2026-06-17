@@ -52,6 +52,7 @@ export function usePkginfoDisplayLabels(names: string[]) {
 export interface PkginfoInstallReportLink {
   displayName: string
   pkginfoId: string | null
+  isLatest: boolean
 }
 
 export function installReportLinkKey(name: string, version: string | null) {
@@ -101,6 +102,7 @@ export function usePkginfoLinksForInstallReports(
         const match = version
           ? versions.find((v) => v.version === version)
           : versions[0]
+        const latestVersion = versions[0]?.version
         const displayName =
           match?.display_name?.trim() ||
           versions[0]?.display_name?.trim() ||
@@ -108,6 +110,7 @@ export function usePkginfoLinksForInstallReports(
         out[key] = {
           displayName,
           pkginfoId: match?.id ?? versions[0]?.id ?? null,
+          isLatest: !!version && version === latestVersion,
         }
       }
       return out

@@ -590,7 +590,7 @@ export default function ManifestDetailPage() {
             )}
           >
             <Package className={manifestViewTabIconClass} aria-hidden />
-            applications
+            Applications
           </TabsTrigger>
           <TabsTrigger
             value="catalogs"
@@ -599,7 +599,7 @@ export default function ManifestDetailPage() {
             )}
           >
             <Library className={manifestViewTabIconClass} aria-hidden />
-            catalogs
+            Catalogs
           </TabsTrigger>
           <TabsTrigger
             value="included"
@@ -608,7 +608,7 @@ export default function ManifestDetailPage() {
             )}
           >
             <FileStack className={manifestViewTabIconClass} aria-hidden />
-            included
+            Included
           </TabsTrigger>
           <TabsTrigger
             value="conditionals"
@@ -617,7 +617,7 @@ export default function ManifestDetailPage() {
             )}
           >
             <ListTree className={manifestViewTabIconClass} aria-hidden />
-            conditionals
+            Conditionals
           </TabsTrigger>
           <TabsTrigger
             value="xml"

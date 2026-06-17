@@ -16,6 +16,30 @@ export function pkgInfoSummaryToAvatarItem(
   }
 }
 
+/** First occurrence wins; preserves order from the source list. */
+function uniquePkgInfoByName(packages: PkgInfoSummary[]): PkgInfoSummary[] {
+  const seen = new Set<string>()
+  const unique: PkgInfoSummary[] = []
+  for (const pkg of packages) {
+    if (seen.has(pkg.name)) continue
+    seen.add(pkg.name)
+    unique.push(pkg)
+  }
+  return unique
+}
+
+/** First occurrence wins; preserves order from the source list. */
+function uniqueNames(names: string[]): string[] {
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const name of names) {
+    if (seen.has(name)) continue
+    seen.add(name)
+    unique.push(name)
+  }
+  return unique
+}
+
 export type SoftwareAvatarCirclesProps = {
   packages: PkgInfoSummary[]
   total: number
@@ -34,7 +58,9 @@ export function SoftwareAvatarCircles({
   interactive = false,
   hideWhenEmpty = true,
 }: SoftwareAvatarCirclesProps) {
-  const avatarUrls = packages.map(pkgInfoSummaryToAvatarItem)
+  const avatarUrls = uniquePkgInfoByName(packages).map(
+    pkgInfoSummaryToAvatarItem,
+  )
   const overflow = Math.max(0, total - avatarUrls.length)
 
   if (hideWhenEmpty && avatarUrls.length === 0) {
@@ -71,8 +97,9 @@ export function SoftwareNameAvatarCircles({
   interactive = false,
   hideWhenEmpty = true,
 }: SoftwareNameAvatarCirclesProps) {
-  const total = names.length
-  const visible = names.slice(0, maxVisible)
+  const unique = uniqueNames(names)
+  const total = unique.length
+  const visible = unique.slice(0, maxVisible)
   const avatarUrls: AvatarCircleItem[] = visible.map((name) => ({
     imageUrl: `/icons/${encodeURIComponent(name)}.png`,
     name,

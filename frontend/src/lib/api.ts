@@ -247,6 +247,7 @@ export interface PkgInfoSummary {
   installer_type: string | null
   restart_action: string | null
   pending_metadata?: boolean
+  is_latest?: boolean
   created_at: string
   updated_at: string
 }
