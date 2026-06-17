@@ -29,6 +29,10 @@ def test_can_access_read_blocks_write():
     assert can_access({pk: "read"}, pk, need_write=False) is True
 
 
+def test_api_path_to_page_key_insights():
+    assert api_path_to_page_key("/api/v1/insights/query") == PageKey.admin_ai_insights
+
+
 def test_munki_upload_routes_under_software_page_key():
     """The direct-upload endpoint must require ``munki.software`` write access."""
     assert api_path_to_page_key("/api/v1/munki/upload") == PageKey.munki_software

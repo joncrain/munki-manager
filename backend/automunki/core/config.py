@@ -158,5 +158,11 @@ class Settings(BaseSettings):
     #: Browser redirect target after OIDC login (must match IdP app registration).
     public_app_url: str = "http://localhost:3000"
 
+    #: Admin AI Insights (Gemini tool-calling agent).
+    insights_enabled: bool = False
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.1-flash-lite-preview"
+    insights_max_tool_rounds: int = 5
+
 
 settings = Settings()

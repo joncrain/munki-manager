@@ -17,6 +17,7 @@ class PageKey(StrEnum):
     admin_audit = "admin.audit"
     admin_settings = "admin.settings"
     admin_access = "admin.access"
+    admin_ai_insights = "admin.ai_insights"
 
 
 ALL_PAGE_KEYS: frozenset[str] = frozenset(x.value for x in PageKey)
@@ -71,6 +72,8 @@ def api_path_to_page_key(path: str) -> str | None:
 
     if root == "audit":
         return PageKey.admin_audit
+    if root == "insights":
+        return PageKey.admin_ai_insights
     if root == "settings":
         return PageKey.admin_settings
     if root == "enroll":

@@ -350,6 +350,15 @@ async def ingest_icons(source_dir: str, overwrite: bool = False) -> None:
     )
 
 
+async def _seed_reporting_cli(count: int, seed: int | None, clear: bool) -> None:
+    from automunki.core.db import async_session_factory
+    from automunki.services.seed_reporting_data import seed_reporting_data
+
+    async with async_session_factory() as session:
+        stats = await seed_reporting_data(session, count=count, seed=seed, clear=clear)
+    logger.info("seed_reporting_complete", **stats)
+
+
 def _sanitize_plist_for_json(data):
     """Recursively convert plist data types to JSON-compatible types."""
     import datetime
@@ -389,12 +398,36 @@ def app():
         help="Replace existing icons with the same name (default: keep existing)",
     )
 
+    seed_reporting_parser = subparsers.add_parser(
+        "seed-reporting",
+        help="Insert demo data into client_machine / check-in / install report tables",
+    )
+    seed_reporting_parser.add_argument(
+        "--count",
+        type=int,
+        default=25,
+        help="Number of fake Macs to create (default: 25)",
+    )
+    seed_reporting_parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="RNG seed for reproducible output",
+    )
+    seed_reporting_parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Delete existing client reporting rows before seeding",
+    )
+
     args = parser.parse_args()
 
     if args.command == "import-repo":
         asyncio.run(import_repo(args.path))
     elif args.command == "ingest-icons":
         asyncio.run(ingest_icons(args.path, overwrite=args.overwrite))
+    elif args.command == "seed-reporting":
+        asyncio.run(_seed_reporting_cli(args.count, args.seed, args.clear))
     else:
         parser.print_help()
 

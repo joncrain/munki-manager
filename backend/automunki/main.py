@@ -13,6 +13,7 @@ from automunki.api.routes.autopkg import router as autopkg_router
 from automunki.api.routes.catalogs import router as catalogs_router
 from automunki.api.routes.enroll import router as enroll_router
 from automunki.api.routes.icons import router as icons_router
+from automunki.api.routes.insights import router as insights_router
 from automunki.api.routes.manifests import router as manifests_router
 from automunki.api.routes.munki_upload import router as munki_upload_router
 from automunki.api.routes.pkginfo import router as pkginfo_router
@@ -101,6 +102,7 @@ app.include_router(munki_upload_router, prefix=api_prefix)
 app.include_router(autopkg_router, prefix=api_prefix)
 app.include_router(reports_router, prefix=api_prefix)
 app.include_router(audit_router, prefix=api_prefix)
+app.include_router(insights_router, prefix=api_prefix)
 app.include_router(settings_router, prefix=api_prefix)
 app.include_router(enroll_router, prefix=api_prefix)
 
