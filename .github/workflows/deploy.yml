@@ -64,16 +64,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Resolve image tag & service selection
         id: cfg
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SERVICES: ${{ inputs.services }}
         run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            TAG="${{ inputs.tag }}"
+          if [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
           else
             TAG="$(git rev-parse --short HEAD)"
           fi
-          SERVICES="${{ inputs.services }}"
+          SERVICES="${INPUT_SERVICES}"
           if [ -z "$SERVICES" ]; then SERVICES="both"; fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "services=${SERVICES}" >> "$GITHUB_OUTPUT"

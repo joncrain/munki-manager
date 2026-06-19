@@ -19,6 +19,8 @@ updates:
     labels:
       - "dependencies"
       - "frontend"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "uv"
     directory: "/backend"
@@ -39,6 +41,8 @@ updates:
     labels:
       - "dependencies"
       - "backend"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -54,6 +58,8 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "docker"
     directories:
@@ -68,6 +74,8 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "terraform"
     directory: "/terraform"
@@ -79,6 +87,8 @@ updates:
     labels:
       - "dependencies"
       - "terraform"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "pre-commit"
     directory: "/"
@@ -94,3 +104,5 @@ updates:
     labels:
       - "dependencies"
       - "pre-commit"
+    cooldown:
+      default-days: 7

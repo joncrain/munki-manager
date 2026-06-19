@@ -1,0 +1,11 @@
+# zizmor configuration — https://docs.zizmor.sh/configuration/
+#
+# Local discovery loads this file from .github/ when auditing the repo root.
+# CI and pre-commit use the same settings unless overridden via CLI flags.
+
+rules:
+  # Deploy inputs (tag, services) are workflow_dispatch-only and require write
+  # access; see docs/security-overview.md §2.8.3.
+  template-injection:
+    ignore:
+      - deploy.yml

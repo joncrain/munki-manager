@@ -536,16 +536,11 @@ can request a token. **Verify out-of-band** in the Entra ID portal.
 #### 2.8.2 Action pinning
 
 - `deploy.yml` and `checks.yml` pin actions to commit SHAs ✅
-- `autopkg_cloud_runner.yml` pins to tags only:
-  - `actions/checkout@v6`
-  - `astral-sh/setup-uv@v7`
-  - `joncrain/macos-pkg-install@v1.0` (third-party!)
-  - `actions/upload-artifact@v7`
-  - The `joncrain/macos-pkg-install` action is fetched as a release tag,
-    which can be retargeted to a different commit at any time.
+- `autopkg_cloud_runner.yml` pins actions to commit SHAs ✅
+- CI runs [zizmor](https://docs.zizmor.sh/) on every PR (see `checks.yml` and
+  `.github/zizmor.yml`)
 
-**Severity: Medium** for the third-party action, **Low** for the official
-ones.
+**Severity: Low** for remaining third-party actions fetched by SHA.
 
 #### 2.8.3 Workflow inputs interpolated into shell
 

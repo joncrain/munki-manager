@@ -16,11 +16,17 @@ repos:
     hooks:
       - id: check-github-workflows
 
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.25.2
+    hooks:
+      - id: zizmor
+        files: ^\.github/(workflows/.*\.ya?ml|dependabot\.ya?ml|zizmor\.ya?ml)$
+
   - repo: local
     hooks:
       - id: biome-check
         name: biome check
-        entry: bash -c 'cd frontend && npx @biomejs/biome@2.3.11 check --no-errors-on-unmatched "${@#frontend/}"' --
+        entry: bash -c 'cd frontend && bunx @biomejs/biome@2.3.11 check --no-errors-on-unmatched "${@#frontend/}"' --
         language: system
         files: ^frontend/
         types_or: [javascript, jsx, ts, tsx, json, css]

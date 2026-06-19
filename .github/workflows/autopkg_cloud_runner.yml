@@ -21,6 +21,9 @@ env:
   # Set MUNKI_MANAGER_RUNNER_TOKEN as a GitHub Actions secret on this repo.
   AUTOMUNKI_API_TOKEN: ${{ secrets.MUNKI_MANAGER_RUNNER_TOKEN }}
 
+permissions:
+  contents: read
+
 jobs:
   autopkg-run:
     runs-on: macos-latest
@@ -33,10 +36,12 @@ jobs:
       - name: Checkout repository
         # Default fetch-depth=1; the runner only needs the AutoPkg/scripts
         # tree at HEAD (no git log / blame / archive operations downstream).
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: "latest"
           enable-cache: true
@@ -66,12 +71,12 @@ jobs:
             -d "{\"github_run_id\":\"${GITHUB_RUN_ID}\",\"github_run_url\":\"${GITHUB_RUN_URL}\"}"
 
       - name: Install AutoPkg
-        uses: joncrain/macos-pkg-install@v1.0
+        uses: joncrain/macos-pkg-install@7134d2a14cf37a88794d794ea0281e1e84161a51 # v1.0
         with:
           pkg_url: https://github.com/autopkg/autopkg/releases/download/v${{ env.AUTOPKG_VERSION }}/autopkg-${{ env.AUTOPKG_VERSION }}.pkg
 
       - name: Install Munki
-        uses: joncrain/macos-pkg-install@v1.0
+        uses: joncrain/macos-pkg-install@7134d2a14cf37a88794d794ea0281e1e84161a51 # v1.0
         with:
           pkg_url: https://github.com/munki/munki/releases/download/v${{ env.MUNKI_VERSION }}/munkitools-${{ env.MUNKI_EXPLICIT_VERSION }}.pkg
 
@@ -214,22 +219,9 @@ jobs:
             -H "Authorization: Bearer ${AUTOMUNKI_API_TOKEN}" \
             -H "Content-Type: application/json" -d '{}'
 
-      # - name: Configure AWS credentials
-      #   if: always()
-      #   uses: aws-actions/configure-aws-credentials@v2
-      #   with:
-      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #     aws-region: us-east-1
-
-      # - name: Push packages to Storage Bucket
-      #   if: always()
-      #   run: |
-      #     aws s3 sync ./pkgs/ s3://${{ secrets.AWS_S3_BUCKET }}/pkgs/
-
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: autopkg-run-artifacts
           path: |

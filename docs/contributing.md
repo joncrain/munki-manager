@@ -136,6 +136,10 @@ uv run pytest
 CI runs the same `pytest` invocation against an ephemeral Postgres provided by
 the workflow. See [`.github/workflows/checks.yml`](../.github/workflows/checks.yml).
 
+Workflow security is audited by [zizmor](https://docs.zizmor.sh/) in CI and via
+the `zizmor` pre-commit hook (`.github/zizmor.yml`). Run locally with
+`uvx zizmor .`.
+
 ## Releases
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please)
