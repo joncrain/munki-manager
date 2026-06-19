@@ -1,24 +1,32 @@
-"""Walk on-disk recipe ``ParentRecipe`` chains, ``autopkg repo-add`` any repo
-that contains a missing parent, and report what was added.
+"""Walk on-disk recipe ``ParentRecipe`` chains and non-core processor deps,
+``autopkg repo-add`` any repo that contains a missing parent or processor, and
+report what was added.
 
 Why this exists
 ===============
 
 ``infer_repos_from_trust_info`` (server-side) builds ``run_repo_list.txt``
-from the recipe's stored ``trust_info.parent_recipes``. When trust info
-is *incomplete* (because identifier resolution silently failed during the
-original ``compute_trust_info``, or because the upstream parent chain
-deepened after the user last verified), the runner clones only a partial
+from the recipe's stored ``trust_info`` (parent recipes + non-core processors).
+When trust info is *incomplete* (because identifier resolution silently failed
+during the original ``compute_trust_info``, or because the upstream parent
+chain deepened after the user last verified), the runner clones only a partial
 set of repos. AutoPkg then walks the on-disk chain at run time and emits:
 
     ERROR  Foo.munki   An error occurred while running 'check phase' on
     Foo.munki.recipe: Could not find parent recipe for com.github.X.Y
 
+or, for third-party processors:
+
+    WARNING: processor path not found for processor:
+    com.github.grahampugh.recipes.commonprocessors/ChangeModeOwner
+    Failed local trust verification.
+
 This script defends against that by iterating every ``*.recipe`` /
 ``*.recipe.yaml`` under ``RECIPE_OVERRIDE_DIRS`` + ``RECIPE_REPO_DIR``,
-following each ``ParentRecipe``, and ``autopkg repo-add``-ing the
-inferred repo for any identifier it cannot resolve on disk. After every
-new repo is cloned we re-scan and continue, so chains that go through
+following each ``ParentRecipe``, collecting non-core ``Processor`` steps from
+every recipe in those chains, and ``autopkg repo-add``-ing the inferred repo
+for any identifier or processor namespace it cannot resolve on disk. After
+every new repo is cloned we re-scan and continue, so chains that go through
 multiple authors (UTM: flammable -> ahousseini-recipes) get fully
 materialised.
 
@@ -58,6 +66,50 @@ except ImportError:  # pragma: no cover - environment fallback
 # ── Identifier → repo (mirrors backend ``_repo_from_identifier``) ───────────
 
 
+# AutoPkg core processors — no separate repo needed (mirrors backend trust.py).
+_CORE_PROCESSORS = frozenset(
+    {
+        "Copier",
+        "CURLDownloader",
+        "CURLTextSearcher",
+        "CodeSignatureVerifier",
+        "DmgCreator",
+        "DmgMounter",
+        "Downloader",
+        "EndOfCheckPhase",
+        "FileFinder",
+        "FileMover",
+        "FlatPkgPacker",
+        "FlatPkgUnpacker",
+        "GitHubReleasesInfoProvider",
+        "Installer",
+        "InstallFromDMG",
+        "MunkiCatalogBuilder",
+        "MunkiImporter",
+        "MunkiInstallsItemsCreator",
+        "MunkiPkginfoMerger",
+        "MunkiSetDefaultCatalog",
+        "PackageRequired",
+        "PathDeleter",
+        "PkgCopier",
+        "PkgCreator",
+        "PkgExtractor",
+        "PkgInfoCreator",
+        "PkgPayloadUnpacker",
+        "PlistEditor",
+        "PlistReader",
+        "SparkleUpdateInfoProvider",
+        "StopProcessingIf",
+        "Symlinker",
+        "Unarchiver",
+        "URLDownloader",
+        "URLGetter",
+        "URLTextSearcher",
+        "Versioner",
+    }
+)
+
+
 def _repo_from_identifier(identifier: str) -> str | None:
     """Mirror of ``backend/automunki/services/trust._repo_from_identifier``.
 
@@ -80,6 +132,43 @@ def _repo_from_identifier(identifier: str) -> str | None:
     if len(parts) >= 4 and parts[0] == "com" and parts[1] != "github":
         return f"autopkg/{_suffix(parts[1])}"
     return None
+
+
+def _processor_namespace(processor_name: str) -> str | None:
+    """Return the recipe-repo namespace for a namespaced processor."""
+    if "/" not in processor_name:
+        return None
+    return processor_name.split("/", 1)[0]
+
+
+def _repo_for_processor(processor_name: str) -> str | None:
+    """Infer the GitHub repo that hosts a namespaced processor."""
+    namespace = _processor_namespace(processor_name)
+    if not namespace:
+        return None
+    return _repo_from_identifier(namespace)
+
+
+def _extract_non_core_processors(recipe_data: dict) -> list[str]:
+    """Collect non-core processor names from a recipe's Process list."""
+    processors: set[str] = set()
+    for step in recipe_data.get("Process", []):
+        proc_name = step.get("Processor", "")
+        base_name = proc_name.rsplit("/", 1)[-1] if "/" in proc_name else proc_name
+        if base_name and base_name not in _CORE_PROCESSORS:
+            processors.add(proc_name)
+    return sorted(processors)
+
+
+def _processor_on_disk(repo_dir: Path, processor_name: str) -> bool:
+    """Return True when ``{ClassName}.py`` exists anywhere under ``repo_dir``."""
+    proc_class = processor_name.rsplit("/", 1)[-1]
+    if not proc_class:
+        return False
+    for pattern in (f"{proc_class}.py", f"{proc_class}.recipe"):
+        if next(repo_dir.rglob(pattern), None) is not None:
+            return True
+    return False
 
 
 # ── Recipe parsing ──────────────────────────────────────────────────────────
@@ -235,7 +324,7 @@ def _resolve_paths() -> tuple[Path, list[Path]]:
 
 
 def ensure_parent_repos(max_repo_adds: int = 32) -> int:
-    """Walk every override's parent chain; ``repo-add`` what is missing.
+    """Walk every override's parent chain and processor deps; ``repo-add`` gaps.
 
     Returns the number of repos added (so the caller can print a summary
     or skip a follow-up ``defaults read`` flush when nothing changed).
@@ -255,52 +344,68 @@ def ensure_parent_repos(max_repo_adds: int = 32) -> int:
     queue: list[str] = list(dict.fromkeys(starting))
     added: list[str] = []
     attempted_repos: set[str] = set()
+    pending_processors: set[str] = set()
 
-    while queue:
-        ident = queue.pop(0)
-        if ident in visited:
-            continue
-        visited.add(ident)
+    def _maybe_repo_add(inferred: str | None) -> bool:
+        """``repo-add`` when ``inferred`` is new; re-scan ``repo_map`` on success."""
+        nonlocal repo_map
+        if not inferred or inferred in attempted_repos:
+            return False
+        if len(added) >= max_repo_adds:
+            print(
+                f"   ensure_parent_repos: hit max {max_repo_adds} repo-adds; refusing to add more.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return False
+        attempted_repos.add(inferred)
+        if _run_repo_add(inferred):
+            added.append(inferred)
+            repo_map = _scan_recipes(repo_dir)
+            return True
+        return False
 
-        recipe_path = repo_map.get(ident)
-        if recipe_path is None:
-            # Not on disk — try to add the inferred repo and re-scan.
-            inferred = _repo_from_identifier(ident)
-            if not inferred:
-                # Convention couldn't infer a repo — let AutoPkg's own
-                # error path surface the real "Could not find parent recipe".
+    while queue or pending_processors:
+        if queue:
+            ident = queue.pop(0)
+            if ident in visited:
                 continue
-            if inferred in attempted_repos:
-                # Already tried this repo; the identifier just doesn't
-                # exist there. Stop walking this branch quietly.
-                continue
-            attempted_repos.add(inferred)
-            if len(added) >= max_repo_adds:
-                print(
-                    f"   ensure_parent_repos: hit max {max_repo_adds} repo-adds; refusing to add more.",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                continue
-            if _run_repo_add(inferred):
-                added.append(inferred)
-                # Re-scan so the new repo's recipes participate in the
-                # rest of this walk (the chain may continue inside it).
-                repo_map = _scan_recipes(repo_dir)
-                recipe_path = repo_map.get(ident)
-                if recipe_path is None:
-                    # Repo cloned but the identifier still isn't there —
-                    # convention misled us; let AutoPkg surface the error.
+            visited.add(ident)
+
+            recipe_path = repo_map.get(ident)
+            if recipe_path is None:
+                inferred = _repo_from_identifier(ident)
+                if not inferred:
                     continue
-            else:
+                if _maybe_repo_add(inferred):
+                    recipe_path = repo_map.get(ident)
+                if recipe_path is None:
+                    continue
+
+            data = _parse_recipe(recipe_path)
+            if not data:
                 continue
 
-        data = _parse_recipe(recipe_path)
-        if not data:
+            for proc_name in _extract_non_core_processors(data):
+                if _processor_on_disk(repo_dir, proc_name):
+                    continue
+                namespace = _processor_namespace(proc_name)
+                if namespace:
+                    pending_processors.add(proc_name)
+
+            next_parent = data.get("ParentRecipe")
+            if isinstance(next_parent, str) and next_parent.strip():
+                queue.append(next_parent.strip())
             continue
-        next_parent = data.get("ParentRecipe")
-        if isinstance(next_parent, str) and next_parent.strip():
-            queue.append(next_parent.strip())
+
+        # Processor pass: repo-add the inferred home for each missing processor.
+        proc_name = pending_processors.pop()
+        if _processor_on_disk(repo_dir, proc_name):
+            continue
+        inferred = _repo_for_processor(proc_name)
+        if not inferred:
+            continue
+        _maybe_repo_add(inferred)
 
     if added:
         print(

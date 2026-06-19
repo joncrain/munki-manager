@@ -543,16 +543,30 @@ def _extract_non_core_processors(recipe_data: dict) -> list[str]:
     return sorted(processors)
 
 
-async def _resolve_processor(repo_full_name: str, processor_name: str) -> tuple[str, str] | None:
-    """Resolve a processor name to (repo, path)."""
-    if "/" in processor_name:
-        parts = processor_name.split("/")
-        proc_repo = f"autopkg/{parts[0]}"
-        proc_class = parts[1]
-    else:
-        proc_repo = repo_full_name
-        proc_class = processor_name
+def _processor_namespace(processor_name: str) -> str | None:
+    """Return the recipe-repo namespace prefix for a namespaced processor."""
+    if "/" not in processor_name:
+        return None
+    return processor_name.split("/", 1)[0]
 
+
+def _candidate_repos_for_processor(processor_name: str, recipe_repo: str) -> list[str]:
+    """Ordered GitHub repos to search for a non-core processor file."""
+    if "/" in processor_name:
+        namespace = _processor_namespace(processor_name)
+        assert namespace is not None
+        candidates: list[str] = []
+        if repo := _repo_from_identifier(namespace):
+            candidates.append(repo)
+        for repo in _candidate_repos(namespace):
+            if repo not in candidates:
+                candidates.append(repo)
+        return candidates
+    return [recipe_repo]
+
+
+async def _find_processor_in_repo(proc_repo: str, proc_class: str) -> tuple[str, str] | None:
+    """Locate ``proc_class.py`` (or ``.recipe``) inside ``proc_repo``."""
     branch = await _repo_default_branch(proc_repo)
     if not branch:
         return None
@@ -567,6 +581,23 @@ async def _resolve_processor(repo_full_name: str, processor_name: str) -> tuple[
         if p.endswith(f"{proc_class}.py") or p.endswith(f"{proc_class}.recipe"):
             return proc_repo, p
 
+    return None
+
+
+async def _resolve_processor(repo_full_name: str, processor_name: str) -> tuple[str, str] | None:
+    """Resolve a processor name to (repo, path).
+
+    Namespaced processors (``com.github.author.recipes.foo/ProcessorName``)
+    live in the author's recipe repo — e.g.
+    ``com.github.grahampugh.recipes.commonprocessors/ChangeModeOwner`` is in
+    ``autopkg/grahampugh-recipes``, not in a repo literally named after the
+    full namespace string.
+    """
+    proc_class = processor_name.rsplit("/", 1)[-1]
+    for proc_repo in _candidate_repos_for_processor(processor_name, repo_full_name):
+        found = await _find_processor_in_repo(proc_repo, proc_class)
+        if found:
+            return found
     return None
 
 
@@ -684,6 +715,13 @@ async def _walk_recipe_chain(
                     "github_repo": proc_repo,
                     "github_path": proc_path,
                 }
+        else:
+            logger.warning(
+                "processor_not_resolved",
+                processor=proc_name,
+                recipe_identifier=identifier,
+                recipe_repo=repo,
+            )
 
     chain_parent = recipe_data.get("ParentRecipe")
     if chain_parent:
@@ -1371,6 +1409,10 @@ def infer_repos_from_trust_info(trust_info: dict | None) -> list[str]:
         for identifier, entry in trust_info.get(section, {}).items():
             if isinstance(entry, dict) and entry.get("github_repo"):
                 repos.add(entry["github_repo"])
-            elif repo := _repo_from_identifier(identifier):
-                repos.add(repo)
+            else:
+                # Processor keys look like ``namespace/ClassName``; infer the
+                # repo from the namespace, not the full key.
+                lookup = _processor_namespace(identifier) or identifier
+                if repo := _repo_from_identifier(lookup):
+                    repos.add(repo)
     return sorted(repos)

@@ -18,7 +18,9 @@ import pytest
 
 from automunki.services.trust import (
     _candidate_repos,
+    _candidate_repos_for_processor,
     _parse_identifier,
+    _processor_namespace,
     _repo_from_identifier,
     infer_repos_from_trust_info,
 )
@@ -264,6 +266,40 @@ def test_infer_repos_from_trust_info_empty_or_none() -> None:
     assert infer_repos_from_trust_info(None) == []
     assert infer_repos_from_trust_info({}) == []
     assert infer_repos_from_trust_info({"parent_recipes": {}, "non_core_processors": {}}) == []
+
+
+def test_processor_namespace_extracts_prefix() -> None:
+    assert (
+        _processor_namespace("com.github.grahampugh.recipes.commonprocessors/ChangeModeOwner")
+        == "com.github.grahampugh.recipes.commonprocessors"
+    )
+    assert _processor_namespace("FlatPkgUnpacker") is None
+
+
+def test_candidate_repos_for_processor_grahampugh_changemodeowner() -> None:
+    """1Password.munki uses Graham Pugh's ChangeModeOwner processor.
+
+    Before the fix, resolution looked in ``autopkg/com.github.grahampugh...``
+    (nonexistent) instead of ``autopkg/grahampugh-recipes``.
+    """
+    repos = _candidate_repos_for_processor(
+        "com.github.grahampugh.recipes.commonprocessors/ChangeModeOwner",
+        "autopkg/dataJAR-recipes",
+    )
+    assert repos[0] == "autopkg/grahampugh-recipes"
+
+
+def test_infer_repos_from_trust_info_namespaced_processor() -> None:
+    trust_info = {
+        "parent_recipes": {},
+        "non_core_processors": {
+            "com.github.grahampugh.recipes.commonprocessors/ChangeModeOwner": {
+                "sha256_hash": "abc",
+            },
+        },
+    }
+    repos = infer_repos_from_trust_info(trust_info)
+    assert "autopkg/grahampugh-recipes" in repos
 
 
 def test_infer_repos_from_trust_info_utm_full_chain() -> None:

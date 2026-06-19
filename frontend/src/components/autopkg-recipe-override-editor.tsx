@@ -3,6 +3,7 @@ import yaml from 'js-yaml'
 import {
   Braces,
   Download,
+  ExternalLink,
   FileCode2,
   FileText,
   GripVertical,
@@ -57,6 +58,7 @@ import {
   recipeInputDict,
 } from '@/lib/autopkg-recipe'
 import { publicApiBaseUrl } from '@/lib/public-api-base'
+import { githubBlobUrlForTrustEntry } from '@/lib/trust-github'
 import { cn } from '@/lib/utils'
 
 const recipeDetailTabContentClass = cn(
@@ -251,39 +253,64 @@ function TrustInfoViewer({
           <p className="text-xs text-muted-foreground">None</p>
         ) : (
           <div className="space-y-2">
-            {Object.entries(parentRecipes).map(([identifier, info]) => (
-              <div
-                key={identifier}
-                className="rounded-md border bg-muted/30 px-3 py-2"
-              >
-                <p className="font-mono text-sm font-medium">{identifier}</p>
-                {info.github_repo && (
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    <span className="text-muted-foreground/70">Repo:</span>{' '}
+            {Object.entries(parentRecipes).map(([identifier, info]) => {
+              const fileUrl = githubBlobUrlForTrustEntry(
+                trustInfo,
+                trustInfo,
+                'parent_recipes',
+                identifier,
+              )
+              return (
+                <div
+                  key={identifier}
+                  className="rounded-md border bg-muted/30 px-3 py-2"
+                >
+                  {fileUrl ? (
                     <a
-                      href={`https://github.com/${info.github_repo}`}
+                      href={fileUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:underline"
+                      className="inline-flex items-center gap-1.5 font-mono text-sm font-medium text-primary hover:underline"
                     >
-                      {info.github_repo}
+                      {identifier}
+                      <ExternalLink
+                        className="h-3.5 w-3.5 shrink-0"
+                        aria-hidden
+                      />
                     </a>
-                    {info.github_path && (
-                      <>
-                        {' / '}
-                        <span className="font-mono">{info.github_path}</span>
-                      </>
-                    )}
+                  ) : (
+                    <p className="font-mono text-sm font-medium">
+                      {identifier}
+                    </p>
+                  )}
+                  {info.github_repo && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      <span className="text-muted-foreground/70">Repo:</span>{' '}
+                      <a
+                        href={`https://github.com/${info.github_repo}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                      >
+                        {info.github_repo}
+                      </a>
+                      {info.github_path && (
+                        <>
+                          {' / '}
+                          <span className="font-mono">{info.github_path}</span>
+                        </>
+                      )}
+                    </p>
+                  )}
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    <span className="text-muted-foreground/70">SHA256:</span>{' '}
+                    <code className="bg-muted px-1 rounded">
+                      {info.sha256_hash}
+                    </code>
                   </p>
-                )}
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  <span className="text-muted-foreground/70">SHA256:</span>{' '}
-                  <code className="bg-muted px-1 rounded">
-                    {info.sha256_hash}
-                  </code>
-                </p>
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

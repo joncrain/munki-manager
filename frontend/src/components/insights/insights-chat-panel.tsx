@@ -8,9 +8,10 @@ import type {
 import { cn } from '@/lib/utils'
 
 const SUGGESTED_PROMPTS = [
-  'How many applications currently have auto-promote enabled?',
-  'What percentage of the fleet is on the latest Chrome version?',
-  'List machines that did not check in during the last month.',
+  'How long has it been since Chrome was updated in the catalog?',
+  'How long did it take for 80% of devices to get the latest Chrome version?',
+  'How often does AutoPkg find a new release for Chrome?',
+  'How many Mac Studios have Chrome installed?',
 ]
 
 type InsightsChatPanelProps = {

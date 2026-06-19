@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from automunki.models.client import ClientMachine
 from automunki.models.munki import PkgInfo
+from automunki.services.insights.machine_activity import DEFAULT_ACTIVE_WITHIN_DAYS, apply_active_machine_filter
 from automunki.services.insights.software_resolve import (
     expand_software_matchers,
     resolve_software_identity,
@@ -202,6 +203,7 @@ async def get_installed_software_version_distribution(
     item_name: str | None = None,
     app_name: str | None = None,
     bundle_id: str | None = None,
+    active_within_days: int | None = DEFAULT_ACTIVE_WITHIN_DAYS,
 ) -> dict:
     """Version histogram from fleet application inventory snapshots."""
     expanded = await expand_software_matchers(
@@ -218,7 +220,11 @@ async def get_installed_software_version_distribution(
     if not matchers:
         return {"error": "Provide query, item_name, app_name, or bundle_id"}
 
-    result = await session.execute(select(ClientMachine).where(ClientMachine.installed_software.isnot(None)))
+    machine_query = apply_active_machine_filter(
+        select(ClientMachine).where(ClientMachine.installed_software.isnot(None)),
+        active_within_days=active_within_days,
+    )
+    result = await session.execute(machine_query)
     machines = result.scalars().all()
 
     version_counts: dict[str, int] = {}
@@ -240,6 +246,8 @@ async def get_installed_software_version_distribution(
     return {
         "matchers": matchers,
         "resolution": expanded.get("resolution"),
+        "active_within_days": active_within_days,
+        "machines_in_scope": len(machines),
         "machines_with_app": machines_with_app,
         "version_distribution": distribution,
         "table": {
@@ -309,6 +317,7 @@ async def compare_fleet_version_to_latest(
     item_name: str | None = None,
     app_name: str | None = None,
     bundle_id: str | None = None,
+    active_within_days: int | None = DEFAULT_ACTIVE_WITHIN_DAYS,
 ) -> dict:
     """Percentage of inventoried machines on the latest catalog version."""
     expanded = await expand_software_matchers(
@@ -342,6 +351,7 @@ async def compare_fleet_version_to_latest(
         item_name=item_name,
         app_name=app_name,
         bundle_id=bundle_id,
+        active_within_days=active_within_days,
     )
     total_with_app = distribution["machines_with_app"]
     on_latest = 0
@@ -355,6 +365,8 @@ async def compare_fleet_version_to_latest(
     return {
         "matchers": matchers,
         "resolution": expanded.get("resolution"),
+        "active_within_days": active_within_days,
+        "machines_in_scope": distribution.get("machines_in_scope"),
         "catalog_item_name": catalog.get("item_name"),
         "catalog_display_name": catalog.get("display_name"),
         "latest_catalog_version": latest,

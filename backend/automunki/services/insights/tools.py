@@ -9,7 +9,7 @@ from typing import Any
 from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from automunki.services.insights import handlers
+from automunki.services.insights import handlers, handlers_analytics
 
 ToolHandler = Callable[..., Awaitable[dict[str, Any]]]
 
@@ -28,6 +28,15 @@ def _schema(*, properties: dict[str, Any], required: list[str] | None = None) ->
         "properties": properties,
         "required": required or [],
     }
+
+
+_ACTIVE_WITHIN_DAYS_PROPERTY = {
+    "type": "integer",
+    "description": (
+        "Only include machines that checked in within this many days (default 5). "
+        "Omit or pass null to include the entire enrolled fleet including stale machines."
+    ),
+}
 
 
 INSIGHT_TOOLS: dict[str, InsightTool] = {
@@ -109,6 +118,7 @@ INSIGHT_TOOLS: dict[str, InsightTool] = {
         name="get_installed_software_version_distribution",
         description=(
             "Version histogram across the fleet from client application inventory. "
+            "Defaults to machines active in the last 5 days. "
             "Prefer the query parameter for fuzzy names (e.g. munki, chrome). "
             "Automatically maps pkginfo display names to inventory names "
             "(Munki item → Managed Software Center in inventory)."
@@ -122,6 +132,7 @@ INSIGHT_TOOLS: dict[str, InsightTool] = {
                 "item_name": {"type": "string", "description": "Munki pkginfo item name."},
                 "app_name": {"type": "string", "description": "Application display name from inventory."},
                 "bundle_id": {"type": "string", "description": "macOS bundle identifier."},
+                "active_within_days": _ACTIVE_WITHIN_DAYS_PROPERTY,
             },
         ),
         handler=handlers.get_installed_software_version_distribution,
@@ -147,6 +158,7 @@ INSIGHT_TOOLS: dict[str, InsightTool] = {
         name="compare_fleet_version_to_latest",
         description=(
             "Compare fleet-installed versions to the latest catalog version. "
+            "Defaults to machines active in the last 5 days. "
             "Use query for fuzzy names (munki, chrome). Resolves display vs inventory names automatically."
         ),
         parameters=_schema(
@@ -158,9 +170,114 @@ INSIGHT_TOOLS: dict[str, InsightTool] = {
                 "item_name": {"type": "string", "description": "Munki pkginfo item name."},
                 "app_name": {"type": "string", "description": "Application display name from inventory."},
                 "bundle_id": {"type": "string", "description": "macOS bundle identifier."},
+                "active_within_days": _ACTIVE_WITHIN_DAYS_PROPERTY,
             },
         ),
         handler=handlers.compare_fleet_version_to_latest,
+    ),
+    "get_pkginfo_update_age": InsightTool(
+        name="get_pkginfo_update_age",
+        description=(
+            "How long since the latest catalog version of software was created, updated, or "
+            "entered a Munki catalog. Use for 'when was X last updated' or 'how old is the catalog version'."
+        ),
+        parameters=_schema(
+            properties={
+                "query": {
+                    "type": "string",
+                    "description": "Free-text software name; resolves to pkginfo item.",
+                },
+                "item_name": {"type": "string", "description": "Exact Munki pkginfo item name."},
+            },
+        ),
+        handler=handlers_analytics.get_pkginfo_update_age,
+    ),
+    "get_adoption_timeline": InsightTool(
+        name="get_adoption_timeline",
+        description=(
+            "Time for the fleet to reach an adoption threshold (default 80%) for a software version, "
+            "based on install reports. Use for rollout speed questions like 'how long to get 80% on latest Chrome'."
+        ),
+        parameters=_schema(
+            properties={
+                "query": {
+                    "type": "string",
+                    "description": "Free-text software name; resolves to pkginfo item.",
+                },
+                "item_name": {"type": "string", "description": "Exact Munki pkginfo item name."},
+                "version": {
+                    "type": "string",
+                    "description": "Target version (defaults to latest catalog version).",
+                },
+                "threshold_percent": {
+                    "type": "number",
+                    "description": "Adoption threshold percentage (default 80).",
+                },
+                "days_back": {
+                    "type": "integer",
+                    "description": "Only consider install reports within this many days (default 365).",
+                },
+            },
+        ),
+        handler=handlers_analytics.get_adoption_timeline,
+    ),
+    "get_autopkg_release_history": InsightTool(
+        name="get_autopkg_release_history",
+        description=(
+            "AutoPkg import history and release cadence for a software title. "
+            "Use for 'how often does AutoPkg find a new release for X' or release frequency."
+        ),
+        parameters=_schema(
+            properties={
+                "query": {
+                    "type": "string",
+                    "description": "Free-text software name; resolves to pkginfo/recipe name.",
+                },
+                "item_name": {"type": "string", "description": "Exact Munki pkginfo or recipe name."},
+                "days_back": {
+                    "type": "integer",
+                    "description": "Look back window in days (default 365).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max release rows to return (default 50).",
+                },
+            },
+        ),
+        handler=handlers_analytics.get_autopkg_release_history,
+    ),
+    "count_machines_with_software": InsightTool(
+        name="count_machines_with_software",
+        description=(
+            "Count machines with software installed, optionally filtered by hardware "
+            "(e.g. Mac Studio, MacBook Pro, Mac14,13). "
+            "Defaults to machines active in the last 5 days."
+        ),
+        parameters=_schema(
+            properties={
+                "query": {
+                    "type": "string",
+                    "description": "Free-text software name; resolves aliases and display names.",
+                },
+                "item_name": {"type": "string", "description": "Munki pkginfo item name."},
+                "app_name": {"type": "string", "description": "Application display name from inventory."},
+                "bundle_id": {"type": "string", "description": "macOS bundle identifier."},
+                "hardware_query": {
+                    "type": "string",
+                    "description": "Hardware filter: product name or model (e.g. 'Mac Studio', 'MacBook Air').",
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Optional exact installed version filter.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max machine rows to return (default 100).",
+                },
+                "active_within_days": _ACTIVE_WITHIN_DAYS_PROPERTY,
+            },
+        ),
+        handler=handlers_analytics.count_machines_with_software,
     ),
 }
 
@@ -211,7 +328,29 @@ def summarize_tool_result(name: str, result: dict[str, Any]) -> str:
     if name == "resolve_software_identity":
         return f"Resolved to {result.get('canonical_item_name')} ({len(result.get('matchers') or [])} matchers)"
     if name == "get_installed_software_version_distribution":
-        return f"{result.get('machines_with_app')} machines with app installed"
+        active = result.get("active_within_days")
+        scope = f" ({active}d active)" if active is not None else " (all fleet)"
+        return f"{result.get('machines_with_app')} machines with app installed{scope}"
+    if name == "get_pkginfo_update_age":
+        days = result.get("days_since_first_catalog_entry") or result.get("days_since_pkginfo_updated")
+        return f"{result.get('item_name')} {result.get('latest_version')}: {days} days since update"
+    if name == "get_adoption_timeline":
+        if result.get("threshold_reached"):
+            return (
+                f"{result.get('days_to_threshold')} days to {result.get('threshold_percent')}% "
+                f"({result.get('version')})"
+            )
+        return f"{result.get('current_adoption_percent')}% adopted (threshold not reached)"
+    if name == "get_autopkg_release_history":
+        return (
+            f"{result.get('new_version_imports')} imports in {result.get('days_back')}d; "
+            f"avg {result.get('average_days_between_imports')} days between releases"
+        )
+    if name == "count_machines_with_software":
+        hw = result.get("hardware_query") or "all hardware"
+        active = result.get("active_within_days")
+        scope = f"{active}d active" if active is not None else "all fleet"
+        return f"{result.get('machine_count')} machines ({hw}, {scope})"
     return "ok"
 
 

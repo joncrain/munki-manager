@@ -294,3 +294,69 @@ def test_caps_repo_adds_at_safety_limit(
         added = ensure_parent_repos.ensure_parent_repos(max_repo_adds=2)
     assert added == 2
     assert mock_add.call_count == 2
+
+
+def _write_recipe_with_processors(
+    path: Path,
+    identifier: str,
+    parent: str | None,
+    processors: list[str],
+) -> None:
+    data: dict = {
+        "Identifier": identifier,
+        "Input": {"NAME": identifier.split(".")[-1]},
+        "Process": [{"Processor": p} for p in processors],
+    }
+    if parent:
+        data["ParentRecipe"] = parent
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:
+        plistlib.dump(data, f)
+
+
+def test_adds_missing_processor_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """1Password-style failure: parent recipe references a third-party processor
+    whose repo was never in ``run_repo_list.txt``."""
+    repo_dir = tmp_path / "repos"
+    overrides = tmp_path / "Overrides"
+    _write_recipe(
+        overrides / "1Password.munki.recipe",
+        identifier="local.munki.1Password",
+        parent="com.github.dataJAR-recipes.munki.1Password",
+    )
+    _write_recipe_with_processors(
+        repo_dir / "dataJAR-recipes" / "1Password" / "1Password.munki.recipe",
+        identifier="com.github.dataJAR-recipes.munki.1Password",
+        parent="com.github.dataJAR-recipes.download.1Password",
+        processors=[
+            "FlatPkgUnpacker",
+            "com.github.grahampugh.recipes.commonprocessors/ChangeModeOwner",
+        ],
+    )
+    _write_recipe(
+        repo_dir / "dataJAR-recipes" / "1Password" / "1Password.download.recipe",
+        identifier="com.github.dataJAR-recipes.download.1Password",
+        parent=None,
+    )
+
+    def _fake_repo_add(repo: str) -> bool:
+        if repo == "autopkg/grahampugh-recipes":
+            proc_dir = repo_dir / "grahampugh-recipes" / "CommonProcessors"
+            proc_dir.mkdir(parents=True, exist_ok=True)
+            (proc_dir / "ChangeModeOwner.py").write_text("# stub")
+            return True
+        return False
+
+    _patch_paths(monkeypatch, repo_dir, overrides)
+    with patch.object(ensure_parent_repos, "_run_repo_add", side_effect=_fake_repo_add) as mock_add:
+        added = ensure_parent_repos.ensure_parent_repos()
+
+    assert added == 1
+    mock_add.assert_called_once_with("autopkg/grahampugh-recipes")
+    assert ensure_parent_repos._processor_on_disk(
+        repo_dir,
+        "com.github.grahampugh.recipes.commonprocessors/ChangeModeOwner",
+    )
