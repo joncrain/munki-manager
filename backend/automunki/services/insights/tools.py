@@ -9,7 +9,7 @@ from typing import Any
 from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from automunki.services.insights import handlers, handlers_analytics
+from automunki.services.insights import handlers, handlers_analytics, handlers_install_reports
 
 ToolHandler = Callable[..., Awaitable[dict[str, Any]]]
 
@@ -279,6 +279,95 @@ INSIGHT_TOOLS: dict[str, InsightTool] = {
         ),
         handler=handlers_analytics.count_machines_with_software,
     ),
+    "get_install_popularity": InsightTool(
+        name="get_install_popularity",
+        description=(
+            "Rank software by install report volume (default: successful installs). "
+            "Breaks down managed installs/updates vs optional (self-service) installs. "
+            "Use for 'most popular install', 'top optional installs', or 'most installed software'."
+        ),
+        parameters=_schema(
+            properties={
+                "days_back": {
+                    "type": "integer",
+                    "description": "Look back window in days (default 90).",
+                },
+                "active_within_days": _ACTIVE_WITHIN_DAYS_PROPERTY,
+                "status": {
+                    "type": "string",
+                    "description": "Install report status to count (default installed).",
+                },
+                "install_reason_category": {
+                    "type": "string",
+                    "description": (
+                        "Filter to managed, optional, or other install reasons. Omit for all categories with breakdown."
+                    ),
+                    "enum": ["managed", "optional", "other"],
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max ranked items to return (default 20).",
+                },
+            },
+        ),
+        handler=handlers_install_reports.get_install_popularity,
+    ),
+    "get_install_counts_by_version": InsightTool(
+        name="get_install_counts_by_version",
+        description=(
+            "Install report counts for one software title grouped by version. "
+            "Use for version-level install volume and managed vs optional mix per version."
+        ),
+        parameters=_schema(
+            properties={
+                "query": {
+                    "type": "string",
+                    "description": "Free-text software name; resolves to pkginfo item.",
+                },
+                "item_name": {"type": "string", "description": "Exact Munki pkginfo item name."},
+                "days_back": {
+                    "type": "integer",
+                    "description": "Look back window in days (default 90).",
+                },
+                "active_within_days": _ACTIVE_WITHIN_DAYS_PROPERTY,
+                "status": {
+                    "type": "string",
+                    "description": "Optional status filter (installed, failed, removed). Omit for all.",
+                },
+            },
+        ),
+        handler=handlers_install_reports.get_install_counts_by_version,
+    ),
+    "get_failed_install_summary": InsightTool(
+        name="get_failed_install_summary",
+        description=(
+            "Rank software by failed install count and list recent failure details with error messages. "
+            "Use for 'what software has the most failed installs' or failure troubleshooting."
+        ),
+        parameters=_schema(
+            properties={
+                "query": {
+                    "type": "string",
+                    "description": "Optional software name filter.",
+                },
+                "item_name": {"type": "string", "description": "Exact Munki pkginfo item name filter."},
+                "days_back": {
+                    "type": "integer",
+                    "description": "Look back window in days (default 90).",
+                },
+                "active_within_days": _ACTIVE_WITHIN_DAYS_PROPERTY,
+                "limit": {
+                    "type": "integer",
+                    "description": "Max ranked items (default 20).",
+                },
+                "recent_failure_limit": {
+                    "type": "integer",
+                    "description": "Max recent failure detail rows (default 25).",
+                },
+            },
+        ),
+        handler=handlers_install_reports.get_failed_install_summary,
+    ),
 }
 
 
@@ -351,6 +440,15 @@ def summarize_tool_result(name: str, result: dict[str, Any]) -> str:
         active = result.get("active_within_days")
         scope = f"{active}d active" if active is not None else "all fleet"
         return f"{result.get('machine_count')} machines ({hw}, {scope})"
+    if name == "get_install_popularity":
+        top = (result.get("rankings") or [{}])[0]
+        return f"Top: {top.get('item_name')} ({top.get('event_count')} installs)"
+    if name == "get_install_counts_by_version":
+        return (
+            f"{result.get('total_events')} install events across {len(result.get('version_breakdown') or [])} versions"
+        )
+    if name == "get_failed_install_summary":
+        return f"{result.get('total_failures')} failures across {result.get('distinct_items_with_failures')} titles"
     return "ok"
 
 

@@ -19,19 +19,21 @@ from automunki.services.insights.tools import (
 )
 
 
-def test_insight_tools_registry_has_twelve_tools():
-    assert len(INSIGHT_TOOLS) == 12
+def test_insight_tools_registry_has_fifteen_tools():
+    assert len(INSIGHT_TOOLS) == 15
     assert "resolve_software_identity" in INSIGHT_TOOLS
     assert "compare_fleet_version_to_latest" in INSIGHT_TOOLS
     assert "get_pkginfo_update_age" in INSIGHT_TOOLS
     assert "get_adoption_timeline" in INSIGHT_TOOLS
     assert "get_autopkg_release_history" in INSIGHT_TOOLS
     assert "count_machines_with_software" in INSIGHT_TOOLS
+    assert "get_install_popularity" in INSIGHT_TOOLS
+    assert "get_failed_install_summary" in INSIGHT_TOOLS
 
 
 def test_gemini_function_declarations_count():
     decls = gemini_function_declarations()
-    assert len(decls) == 12
+    assert len(decls) == 15
     assert decls[0].name in INSIGHT_TOOLS
 
 

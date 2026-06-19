@@ -8,9 +8,9 @@ import type {
 import { cn } from '@/lib/utils'
 
 const SUGGESTED_PROMPTS = [
-  'How long has it been since Chrome was updated in the catalog?',
-  'How long did it take for 80% of devices to get the latest Chrome version?',
-  'How often does AutoPkg find a new release for Chrome?',
+  'What is the most popular optional install in the last 90 days?',
+  'What software has the most failed installs?',
+  'Show Chrome install counts grouped by version.',
   'How many Mac Studios have Chrome installed?',
 ]
 
