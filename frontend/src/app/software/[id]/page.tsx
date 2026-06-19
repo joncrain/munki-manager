@@ -26,6 +26,7 @@ import {
 } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { EntityAuditTrail } from '@/components/audit/entity-audit-trail'
 import { useAuth } from '@/components/auth-provider'
 import { DataTable } from '@/components/data-table'
 import {
@@ -33,7 +34,7 @@ import {
   VersionWithLatestBadge,
 } from '@/components/latest-version-badge'
 import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
-import { SoftwareInstallTimelineChart } from '@/components/reporting/software-install-timeline-chart'
+import { SoftwareInstallVersionTimelineChart } from '@/components/reporting/software-install-version-timeline-chart'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -72,7 +73,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import { usePkginfoVersionsForName } from '@/hooks/use-pkginfo-versions'
 import {
-  type AuditLogRead,
   api,
   apiGetText,
   type CatalogRead,
@@ -374,6 +374,7 @@ export default function SoftwareDetailPage() {
   const [iconRevision, setIconRevision] = useState(0)
   const [installReportPage, setInstallReportPage] = useState(1)
   const [installReportPageSize, setInstallReportPageSize] = useState(25)
+  const [installActivityDays, setInstallActivityDays] = useState(90)
 
   const { canWrite } = useAuth()
   const canMutateSoftware = canWrite(PAGE_KEYS.munkiSoftware)
@@ -421,16 +422,11 @@ export default function SoftwareDetailPage() {
     !isLoading && pkg ? pkg.display_name?.trim() || pkg.name : undefined,
   )
 
-  const { data: auditTrail } = useQuery({
-    queryKey: ['audit', 'pkg_info', id],
-    queryFn: () => api.get<AuditLogRead[]>(`/audit/pkg_info/${id}`),
-  })
-
   const { data: installSummary, isLoading: installSummaryLoading } = useQuery({
-    queryKey: ['pkg-install-report-summary', id],
+    queryKey: ['pkg-install-report-summary', id, installActivityDays],
     queryFn: () =>
       api.get<PkgInfoInstallReportSummary>(
-        `/pkginfo/${id}/install-reports/summary`,
+        `/pkginfo/${id}/install-reports/summary?days=${installActivityDays}`,
       ),
     enabled: Boolean(id),
   })
@@ -1729,16 +1725,17 @@ export default function SoftwareDetailPage() {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-base">
-                    Activity (last 90 days)
+                    Activity by version
                   </CardTitle>
                   <p className="text-xs text-muted-foreground">
                     By install time, or report time if missing
                   </p>
                 </CardHeader>
                 <CardContent>
-                  <SoftwareInstallTimelineChart
-                    history={installSummary.timeline}
-                    totalReports={installSummary.total_reports}
+                  <SoftwareInstallVersionTimelineChart
+                    summary={installSummary}
+                    days={installActivityDays}
+                    onDaysChange={setInstallActivityDays}
                   />
                 </CardContent>
               </Card>
@@ -1778,36 +1775,7 @@ export default function SoftwareDetailPage() {
 
         {/* ── Audit Trail Tab ── */}
         <TabsContent value="audit" className={softwareDetailTabContentClass}>
-          {auditTrail?.length ? (
-            <div className="space-y-2">
-              {auditTrail.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="flex items-center justify-between rounded-md border p-3"
-                >
-                  <div>
-                    <Badge variant="outline">{entry.action}</Badge>
-                    <span className="ml-2 text-sm">
-                      {entry.user_email || 'system'}
-                    </span>
-                    {entry.notes && (
-                      <span className="ml-2 text-sm text-muted-foreground">
-                        &mdash; {entry.notes}
-                      </span>
-                    )}
-                  </div>
-                  <span
-                    suppressHydrationWarning
-                    className="text-sm text-muted-foreground"
-                  >
-                    {formatDateTime(entry.created_at)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No audit history</p>
-          )}
+          <EntityAuditTrail entityType="pkg_info" entityId={id} />
         </TabsContent>
       </Tabs>
     </div>

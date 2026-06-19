@@ -1,13 +1,34 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from automunki.api.deps import get_session
+from automunki.core.page_keys import PageKey
 from automunki.models.audit import AuditLog
 from automunki.schemas.audit import AuditLogRead
 from automunki.schemas.common import PaginatedResponse
+from automunki.services.permissions import can_access
 
 router = APIRouter(prefix="/audit", tags=["audit"])
+
+
+def _include_audit_details(request: Request) -> bool:
+    perms = getattr(request.state, "effective_permissions", None) or {}
+    return can_access(perms, PageKey.admin_audit, need_write=False)
+
+
+def _audit_log_read(entry: AuditLog, *, include_details: bool) -> AuditLogRead:
+    row = AuditLogRead.model_validate(entry)
+    if include_details:
+        return row
+    return row.model_copy(
+        update={
+            "before_snapshot": None,
+            "after_snapshot": None,
+            "changes": None,
+            "ip_address": None,
+        }
+    )
 
 
 @router.get("", response_model=PaginatedResponse)
@@ -48,11 +69,13 @@ async def list_audit_logs(
 async def get_entity_audit_trail(
     entity_type: str,
     entity_id: str,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
+    include_details = _include_audit_details(request)
     result = await session.execute(
         select(AuditLog)
         .where(AuditLog.entity_type == entity_type, AuditLog.entity_id == entity_id)
         .order_by(AuditLog.created_at.desc())
     )
-    return [AuditLogRead.model_validate(a) for a in result.scalars().all()]
+    return [_audit_log_read(a, include_details=include_details) for a in result.scalars().all()]

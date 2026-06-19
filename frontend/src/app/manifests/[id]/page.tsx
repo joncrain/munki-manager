@@ -4,6 +4,7 @@ import {
   FileCode2,
   FileStack,
   FileText,
+  History,
   Library,
   ListTree,
   Loader2,
@@ -17,6 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { EntityAuditTrail } from '@/components/audit/entity-audit-trail'
 import { useAuth } from '@/components/auth-provider'
 import { ManifestConditionalBlocksEditor } from '@/components/manifest-conditional-blocks-editor'
 import { ManifestItemSectionsTabs } from '@/components/manifest-item-sections-tabs'
@@ -628,6 +630,15 @@ export default function ManifestDetailPage() {
             <FileCode2 className={manifestViewTabIconClass} aria-hidden />
             xml
           </TabsTrigger>
+          <TabsTrigger
+            value="audit"
+            className={manifestViewTabTrigger(
+              'data-[state=active]:text-gruvbox-red data-[state=active]:ring-2 data-[state=active]:ring-gruvbox-red/30',
+            )}
+          >
+            <History className={manifestViewTabIconClass} aria-hidden />
+            Audit Trail
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="applications" className="mt-0 flex flex-col gap-8">
@@ -721,6 +732,10 @@ export default function ManifestDetailPage() {
               </pre>
             </ScrollArea>
           )}
+        </TabsContent>
+
+        <TabsContent value="audit" className={manifestViewTabContentClass}>
+          <EntityAuditTrail entityType="manifest" entityId={id} />
         </TabsContent>
       </Tabs>
     </div>

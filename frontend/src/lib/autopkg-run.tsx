@@ -23,6 +23,7 @@ import {
   type AutoPkgRecipeRead,
   type AutoPkgRunRead,
   api,
+  type RunResultRead,
   type UiSettingsRead,
 } from '@/lib/api'
 import { publicApiBaseUrl } from '@/lib/public-api-base'
@@ -548,4 +549,24 @@ export function QuickRunDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+/** Munki pkginfo name for linking an AutoPkg run result to software detail. */
+export function runResultPkginfoKey(result: RunResultRead): string {
+  const path = result.imported_pkginfo_path?.trim()
+  let stem = ''
+  if (path) {
+    const base = path.split(/[/\\]/).pop() ?? path
+    stem = base.replace(/\.plist$/i, '')
+  }
+  if (!stem) {
+    stem = result.recipe_name
+      .replace(/\.munki\.recipe$/i, '')
+      .replace(/\.recipe$/i, '')
+  }
+  const version = result.imported_version?.trim()
+  if (version && stem.endsWith(`-${version}`)) {
+    return stem.slice(0, -(version.length + 1))
+  }
+  return stem
 }

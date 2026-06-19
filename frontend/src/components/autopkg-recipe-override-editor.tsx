@@ -7,6 +7,7 @@ import {
   FileCode2,
   FileText,
   GripVertical,
+  History,
   ListTree,
   Loader2,
   Package,
@@ -18,6 +19,7 @@ import {
 import { parse as plistParse } from 'plist'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { EntityAuditTrail } from '@/components/audit/entity-audit-trail'
 import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
@@ -949,6 +951,15 @@ export function RecipeOverrideEditor({
             <ListTree className={recipeTabIconClass} aria-hidden />
             yaml
           </TabsTrigger>
+          <TabsTrigger
+            value="audit"
+            className={recipeDetailTabTrigger(
+              'data-[state=active]:text-gruvbox-red data-[state=active]:ring-2 data-[state=active]:ring-gruvbox-red/30',
+            )}
+          >
+            <History className={recipeTabIconClass} aria-hidden />
+            Audit Trail
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className={recipeDetailTabContentClass}>
@@ -1320,6 +1331,10 @@ export function RecipeOverrideEditor({
               </pre>
             </ScrollArea>
           )}
+        </TabsContent>
+
+        <TabsContent value="audit" className={recipeDetailTabContentClass}>
+          <EntityAuditTrail entityType="autopkg_recipe" entityId={recipe.id} />
         </TabsContent>
       </Tabs>
     </>

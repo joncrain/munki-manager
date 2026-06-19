@@ -768,6 +768,9 @@ export interface PkgInfoInstallReportSummary {
   total_reports: number
   unique_machines: number
   by_status: Record<string, number>
+  days: number
+  versions: string[]
+  timeline_by_version: Record<string, CheckinHistoryPoint[]>
   timeline: CheckinHistoryPoint[]
 }
 

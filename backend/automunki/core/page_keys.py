@@ -22,6 +22,19 @@ class PageKey(StrEnum):
 
 ALL_PAGE_KEYS: frozenset[str] = frozenset(x.value for x in PageKey)
 
+_AUDIT_ENTITY_PAGE_KEYS: dict[str, PageKey] = {
+    "pkg_info": PageKey.munki_software,
+    "manifest": PageKey.munki_manifests,
+    "autopkg_recipe": PageKey.autopkg_recipes,
+    "catalog": PageKey.munki_catalogs,
+}
+
+
+def audit_entity_type_to_page_key(entity_type: str) -> str | None:
+    """Map audit ``entity_type`` to the page key that may read that entity's trail."""
+    key = _AUDIT_ENTITY_PAGE_KEYS.get(entity_type)
+    return key.value if key is not None else None
+
 
 def api_path_to_page_key(path: str) -> str | None:
     """Map HTTP request path (e.g. ``/api/v1/pkginfo``) to a PageKey. ``None`` = no RBAC (auth routes)."""
@@ -71,6 +84,10 @@ def api_path_to_page_key(path: str) -> str | None:
         return PageKey.reporting_devices
 
     if root == "audit":
+        if len(seg) >= 3 and seg[1] and seg[2]:
+            mapped = audit_entity_type_to_page_key(seg[1])
+            if mapped is not None:
+                return mapped
         return PageKey.admin_audit
     if root == "insights":
         return PageKey.admin_ai_insights

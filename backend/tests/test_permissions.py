@@ -36,3 +36,13 @@ def test_api_path_to_page_key_insights():
 def test_munki_upload_routes_under_software_page_key():
     """The direct-upload endpoint must require ``munki.software`` write access."""
     assert api_path_to_page_key("/api/v1/munki/upload") == PageKey.munki_software
+
+
+def test_api_path_to_page_key_entity_audit_trails():
+    assert api_path_to_page_key("/api/v1/audit/pkg_info/abc") == PageKey.munki_software
+    assert api_path_to_page_key("/api/v1/audit/manifest/abc") == PageKey.munki_manifests
+    assert api_path_to_page_key("/api/v1/audit/autopkg_recipe/abc") == PageKey.autopkg_recipes
+
+
+def test_api_path_to_page_key_global_audit_log():
+    assert api_path_to_page_key("/api/v1/audit") == PageKey.admin_audit

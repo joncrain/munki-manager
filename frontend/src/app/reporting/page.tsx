@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Activity, MonitorSmartphone, MoonStar, Percent } from 'lucide-react'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
 import { PageHeading } from '@/components/page-heading'
@@ -19,60 +20,80 @@ import {
   api,
   type ClientMachineSummary,
   type FleetComplianceOverview,
+  type ManifestRead,
   type PaginatedResponse,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 
-const columns: ColumnDef<ClientMachineSummary>[] = [
-  {
-    accessorKey: 'hostname',
-    header: 'Hostname',
-    cell: ({ row }) => (
-      <Link
-        to={`/reporting/devices/${row.original.id}`}
-        className="font-medium text-primary underline-offset-4 hover:underline"
-      >
-        {row.original.hostname || '—'}
-      </Link>
-    ),
-  },
-  {
-    accessorKey: 'serial_number',
-    header: 'Serial',
-    cell: ({ row }) => (
-      <span className="font-mono text-xs">{row.original.serial_number}</span>
-    ),
-  },
-  {
-    accessorKey: 'manifest_name',
-    header: 'Manifest',
-    cell: ({ row }) => row.original.manifest_name || '—',
-  },
-  {
-    accessorKey: 'munki_version',
-    header: 'Munki',
-    cell: ({ row }) => row.original.munki_version || '—',
-  },
-  {
-    accessorKey: 'last_checkin_at',
-    header: 'Last check-in',
-    cell: ({ row }) =>
-      row.original.last_checkin_at ? (
-        <span suppressHydrationWarning className="text-sm">
-          {formatDateTime(row.original.last_checkin_at)}
-        </span>
-      ) : (
-        <span className="text-muted-foreground">Never</span>
+function makeColumns(
+  manifestIdByName: Map<string, string>,
+): ColumnDef<ClientMachineSummary>[] {
+  return [
+    {
+      accessorKey: 'hostname',
+      header: 'Hostname',
+      cell: ({ row }) => (
+        <Link
+          to={`/reporting/devices/${row.original.id}`}
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          {row.original.hostname || '—'}
+        </Link>
       ),
-  },
-  {
-    accessorKey: 'install_report_count',
-    header: 'Install rows',
-    cell: ({ row }) => (
-      <Badge variant="outline">{row.original.install_report_count}</Badge>
-    ),
-  },
-]
+    },
+    {
+      accessorKey: 'serial_number',
+      header: 'Serial',
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">{row.original.serial_number}</span>
+      ),
+    },
+    {
+      accessorKey: 'manifest_name',
+      header: 'Manifest',
+      cell: ({ row }) => {
+        const name = row.original.manifest_name
+        if (!name) return <span className="text-muted-foreground">—</span>
+        const manifestId = manifestIdByName.get(name)
+        if (manifestId) {
+          return (
+            <Link
+              to={`/manifests/${manifestId}`}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              {name}
+            </Link>
+          )
+        }
+        return <span>{name}</span>
+      },
+    },
+    {
+      accessorKey: 'munki_version',
+      header: 'Munki',
+      cell: ({ row }) => row.original.munki_version || '—',
+    },
+    {
+      accessorKey: 'last_checkin_at',
+      header: 'Last check-in',
+      cell: ({ row }) =>
+        row.original.last_checkin_at ? (
+          <span suppressHydrationWarning className="text-sm">
+            {formatDateTime(row.original.last_checkin_at)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Never</span>
+        ),
+    },
+    {
+      accessorKey: 'install_report_count',
+      header: 'Install rows',
+      cell: ({ row }) => (
+        <Badge variant="outline">{row.original.install_report_count}</Badge>
+      ),
+    },
+  ]
+}
 
 export default function ReportingPage() {
   useDocumentTitle('Reporting', 'Devices')
@@ -82,6 +103,24 @@ export default function ReportingPage() {
     parseAsInteger.withDefault(50),
   )
   const [search, setSearch] = useQueryState('q', parseAsString.withDefault(''))
+
+  const { data: manifests } = useQuery({
+    queryKey: ['manifests'],
+    queryFn: () => api.get<ManifestRead[]>('/manifests'),
+  })
+
+  const manifestIdByName = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const m of manifests ?? []) {
+      map.set(m.name, m.id)
+    }
+    return map
+  }, [manifests])
+
+  const columns = useMemo(
+    () => makeColumns(manifestIdByName),
+    [manifestIdByName],
+  )
 
   const { data: compliance, isLoading: complianceLoading } = useQuery({
     queryKey: ['reports-compliance'],

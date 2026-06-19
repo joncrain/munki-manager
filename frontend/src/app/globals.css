@@ -444,3 +444,176 @@
 .prose-chat :where(pre code) {
   @apply bg-transparent p-0;
 }
+
+/* json-diff-kit viewer — high-contrast, theme-aware audit diff */
+.audit-json-diff {
+  --audit-diff-remove-bg: color-mix(
+    in oklch,
+    var(--color-red-500) 22%,
+    var(--background)
+  );
+  --audit-diff-remove-fg: var(--color-red-950);
+  --audit-diff-remove-accent: var(--color-red-600);
+  --audit-diff-add-bg: color-mix(
+    in oklch,
+    var(--color-emerald-500) 22%,
+    var(--background)
+  );
+  --audit-diff-add-fg: var(--color-emerald-950);
+  --audit-diff-add-accent: var(--color-emerald-600);
+  --audit-diff-modify-bg: color-mix(
+    in oklch,
+    var(--color-amber-400) 35%,
+    var(--background)
+  );
+  --audit-diff-modify-fg: var(--color-amber-950);
+  --audit-diff-modify-accent: var(--color-amber-600);
+  --audit-diff-inline-remove-bg: color-mix(
+    in oklch,
+    var(--color-red-500) 35%,
+    var(--background)
+  );
+  --audit-diff-inline-add-bg: color-mix(
+    in oklch,
+    var(--color-emerald-500) 35%,
+    var(--background)
+  );
+}
+
+/* Highlighted rows are pastel “islands” — always use dark text (like light mode). */
+.dark .audit-json-diff {
+  --audit-diff-remove-bg: #fecaca;
+  --audit-diff-remove-fg: #7f1d1d;
+  --audit-diff-remove-accent: #b91c1c;
+  --audit-diff-add-bg: #bbf7d0;
+  --audit-diff-add-fg: #14532d;
+  --audit-diff-add-accent: #15803d;
+  --audit-diff-modify-bg: #fde68a;
+  --audit-diff-modify-fg: #451a03;
+  --audit-diff-modify-accent: #b45309;
+  --audit-diff-inline-remove-bg: #fca5a5;
+  --audit-diff-inline-add-bg: #86efac;
+}
+
+/* Neutralize json-diff-kit’s built-in light-mode-only row backgrounds */
+.audit-json-diff .json-diff-viewer tr .line-add,
+.audit-json-diff .json-diff-viewer tr .line-remove,
+.audit-json-diff .json-diff-viewer tr .line-modify {
+  background: unset;
+}
+
+.audit-json-diff .json-diff-viewer {
+  color: var(--foreground);
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+.audit-json-diff .json-diff-viewer td {
+  padding: 2px 4px;
+}
+.audit-json-diff .json-diff-viewer td.line-number {
+  border-right: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5rem;
+  opacity: 0.85;
+  padding: 2px 8px;
+}
+.audit-json-diff .json-diff-viewer pre {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.audit-json-diff .json-diff-viewer td.line-remove pre,
+.audit-json-diff .json-diff-viewer td.line-add pre,
+.audit-json-diff .json-diff-viewer td.line-modify pre {
+  color: inherit;
+}
+.audit-json-diff .json-diff-viewer td.line-remove {
+  background-color: var(--audit-diff-remove-bg) !important;
+  color: var(--audit-diff-remove-fg) !important;
+}
+.audit-json-diff .json-diff-viewer td.line-add {
+  background-color: var(--audit-diff-add-bg) !important;
+  color: var(--audit-diff-add-fg) !important;
+}
+.audit-json-diff .json-diff-viewer td.line-modify {
+  background-color: var(--audit-diff-modify-bg) !important;
+  color: var(--audit-diff-modify-fg) !important;
+}
+.audit-json-diff .json-diff-viewer td.line-remove.line-number,
+.audit-json-diff .json-diff-viewer td.line-add.line-number,
+.audit-json-diff .json-diff-viewer td.line-modify.line-number {
+  color: color-mix(
+    in oklch,
+    var(--audit-diff-remove-fg) 65%,
+    transparent
+  ) !important;
+  opacity: 1;
+}
+.audit-json-diff .json-diff-viewer td.line-add.line-number {
+  color: color-mix(
+    in oklch,
+    var(--audit-diff-add-fg) 65%,
+    transparent
+  ) !important;
+}
+.audit-json-diff .json-diff-viewer td.line-modify.line-number {
+  color: color-mix(
+    in oklch,
+    var(--audit-diff-modify-fg) 65%,
+    transparent
+  ) !important;
+}
+.audit-json-diff .json-diff-viewer td.line-remove:not(.line-number) {
+  box-shadow: inset 3px 0 0 var(--audit-diff-remove-accent);
+}
+.audit-json-diff .json-diff-viewer td.line-add:not(.line-number) {
+  box-shadow: inset 3px 0 0 var(--audit-diff-add-accent);
+}
+.audit-json-diff .json-diff-viewer td.line-modify:not(.line-number) {
+  box-shadow: inset 3px 0 0 var(--audit-diff-modify-accent);
+}
+.audit-json-diff .json-diff-viewer pre .inline-diff-remove {
+  background: var(--audit-diff-inline-remove-bg);
+  border-radius: 2px;
+  color: var(--audit-diff-remove-fg) !important;
+  font-weight: 600;
+  text-decoration: line-through;
+  text-decoration-color: var(--audit-diff-remove-accent);
+}
+.audit-json-diff .json-diff-viewer pre .inline-diff-add {
+  background: var(--audit-diff-inline-add-bg);
+  border-radius: 2px;
+  color: var(--audit-diff-add-fg) !important;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--audit-diff-add-accent);
+}
+.audit-json-diff .json-diff-viewer tr:hover td:before {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.dark .audit-json-diff .json-diff-viewer tr:hover td.line-remove:before,
+.dark .audit-json-diff .json-diff-viewer tr:hover td.line-add:before,
+.dark .audit-json-diff .json-diff-viewer tr:hover td.line-modify:before {
+  background: transparent;
+}
+.audit-json-diff .json-diff-viewer tr.message-line,
+.audit-json-diff .json-diff-viewer tr.expand-line .has-lines-before,
+.audit-json-diff .json-diff-viewer tr.expand-line .has-lines-after {
+  border-color: var(--border);
+  color: var(--muted-foreground);
+}
+.audit-json-diff .json-diff-viewer tr.expand-line button {
+  border-radius: 4px;
+  color: var(--primary);
+  padding: 2px 6px;
+  touch-action: manipulation;
+}
+.audit-json-diff .json-diff-viewer tr.expand-line button:hover {
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  color: var(--foreground);
+  text-decoration: none;
+}
+.audit-json-diff .json-diff-viewer tr.expand-line button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

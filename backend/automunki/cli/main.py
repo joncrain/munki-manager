@@ -350,12 +350,25 @@ async def ingest_icons(source_dir: str, overwrite: bool = False) -> None:
     )
 
 
-async def _seed_reporting_cli(count: int, seed: int | None, clear: bool) -> None:
+async def _seed_reporting_cli(
+    count: int,
+    seed: int | None,
+    clear: bool,
+    enrich: bool,
+    recent_checkin_days: int,
+) -> None:
     from automunki.core.db import async_session_factory
     from automunki.services.seed_reporting_data import seed_reporting_data
 
     async with async_session_factory() as session:
-        stats = await seed_reporting_data(session, count=count, seed=seed, clear=clear)
+        stats = await seed_reporting_data(
+            session,
+            count=count,
+            seed=seed,
+            clear=clear,
+            enrich=enrich,
+            recent_checkin_days=recent_checkin_days,
+        )
     logger.info("seed_reporting_complete", **stats)
 
 
@@ -419,6 +432,17 @@ def app():
         action="store_true",
         help="Delete existing client reporting rows before seeding",
     )
+    seed_reporting_parser.add_argument(
+        "--enrich",
+        action="store_true",
+        help="Backfill existing machines with recent check-ins and pkginfo-based install history",
+    )
+    seed_reporting_parser.add_argument(
+        "--recent-days",
+        type=int,
+        default=7,
+        help="Calendar days of check-ins to backfill (default: 7)",
+    )
 
     args = parser.parse_args()
 
@@ -427,7 +451,15 @@ def app():
     elif args.command == "ingest-icons":
         asyncio.run(ingest_icons(args.path, overwrite=args.overwrite))
     elif args.command == "seed-reporting":
-        asyncio.run(_seed_reporting_cli(args.count, args.seed, args.clear))
+        asyncio.run(
+            _seed_reporting_cli(
+                args.count,
+                args.seed,
+                args.clear,
+                args.enrich,
+                args.recent_days,
+            )
+        )
     else:
         parser.print_help()
 

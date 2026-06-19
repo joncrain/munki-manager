@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import type { ColumnDef } from '@tanstack/react-table'
 import { ClipboardList, X } from 'lucide-react'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { useState } from 'react'
+import { AuditDetailDialog } from '@/components/audit/audit-detail-dialog'
+import { auditLogAdminColumns } from '@/components/audit/audit-log-columns'
 import { DataTable } from '@/components/data-table'
 import { PageHeading } from '@/components/page-heading'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -15,7 +16,6 @@ import {
 } from '@/components/ui/select'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import { type AuditLogRead, api, type PaginatedResponse } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
 
 const ACTION_OPTIONS = [
   'create',
@@ -35,77 +35,9 @@ const ENTITY_OPTIONS = [
   'repository',
 ]
 
-const actionVariant = (action: string) => {
-  switch (action) {
-    case 'create':
-      return 'default' as const
-    case 'update':
-      return 'secondary' as const
-    case 'delete':
-      return 'destructive' as const
-    case 'promote':
-    case 'approve':
-      return 'default' as const
-    case 'reject':
-      return 'destructive' as const
-    default:
-      return 'outline' as const
-  }
-}
-
-const columns: ColumnDef<AuditLogRead>[] = [
-  {
-    accessorKey: 'created_at',
-    header: 'Time',
-    cell: ({ row }) => (
-      <span suppressHydrationWarning className="text-sm">
-        {formatDateTime(row.original.created_at)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'action',
-    header: 'Action',
-    cell: ({ row }) => (
-      <Badge variant={actionVariant(row.original.action)}>
-        {row.original.action}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: 'entity_type',
-    header: 'Entity Type',
-    cell: ({ row }) => (
-      <Badge variant="outline">{row.original.entity_type}</Badge>
-    ),
-  },
-  {
-    accessorKey: 'entity_name',
-    header: 'Entity',
-    cell: ({ row }) => (
-      <span className="truncate">
-        {row.original.entity_name || row.original.entity_id}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'user_email',
-    header: 'User',
-    cell: ({ row }) => row.original.user_email || 'system',
-  },
-  {
-    accessorKey: 'notes',
-    header: 'Notes',
-    cell: ({ row }) => (
-      <span className="line-clamp-1 text-sm text-muted-foreground">
-        {row.original.notes || '—'}
-      </span>
-    ),
-  },
-]
-
 export default function AuditPage() {
   useDocumentTitle('Admin', 'Audit Log')
+  const [selectedEntry, setSelectedEntry] = useState<AuditLogRead | null>(null)
   const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
   const [pageSize, setPageSize] = useQueryState(
     'pageSize',
@@ -198,9 +130,13 @@ export default function AuditPage() {
         )}
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        Click a row to view change details.
+      </p>
+
       <div className="flex-1 min-h-0">
         <DataTable
-          columns={columns}
+          columns={auditLogAdminColumns}
           data={data?.items ?? []}
           pageCount={data?.total_pages ?? 1}
           page={page}
@@ -212,8 +148,19 @@ export default function AuditPage() {
             setPage(1)
           }}
           isLoading={isLoading}
+          getRowId={(row) => row.id}
+          onRowClick={(row) => setSelectedEntry(row)}
+          rowClassName="cursor-pointer hover:bg-muted/50"
         />
       </div>
+
+      <AuditDetailDialog
+        entry={selectedEntry}
+        open={selectedEntry !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedEntry(null)
+        }}
+      />
     </div>
   )
 }

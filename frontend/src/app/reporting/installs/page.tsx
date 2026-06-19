@@ -197,11 +197,7 @@ export default function ReportingInstallsPage() {
       <div>
         <PageHeading icon={ListChecks} accent="reporting" title="Installs" />
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Historical install and removal events from client check-ins (
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">
-            client_install_report
-          </code>
-          ).
+          Historical install and removal events from client check-ins.
         </p>
       </div>
 

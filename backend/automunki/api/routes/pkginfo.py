@@ -79,6 +79,73 @@ async def _delete_metadata_cache_entries_for_recipe(session: AsyncSession, recip
 router = APIRouter(prefix="/pkginfo", tags=["pkginfo"])
 
 INSTALL_REPORT_TIMELINE_DAYS = 90
+INSTALL_REPORT_TIMELINE_MIN_DAYS = 7
+INSTALL_REPORT_TIMELINE_MAX_DAYS = 90
+UNKNOWN_INSTALL_VERSION = "(unknown)"
+
+
+def _filled_daily_counts(
+    rows: list[tuple[object, int]],
+    days: int,
+    *,
+    end: date | None = None,
+) -> list[dict[str, str | int]]:
+    """Map SQL day buckets to a full calendar series including zeros."""
+    counts: dict[date, int] = {}
+    for dt, cnt in rows:
+        if isinstance(dt, datetime):
+            d = dt.astimezone(UTC).date()
+        else:
+            d = dt  # pragma: no cover
+        counts[d] = int(cnt)
+
+    end_date = end or datetime.now(UTC).date()
+    start = end_date - timedelta(days=days - 1)
+    series: list[dict[str, str | int]] = []
+    cur = start
+    while cur <= end_date:
+        series.append({"date": cur.isoformat(), "count": counts.get(cur, 0)})
+        cur += timedelta(days=1)
+    return series
+
+
+def _version_timeline_sort_key(version: str) -> tuple[int, tuple[object, ...] | str]:
+    if version == UNKNOWN_INSTALL_VERSION:
+        return (0, version)
+    return (1, loose_version_key(version))
+
+
+def _build_install_timeline_by_version(
+    rows: list[tuple[object, str | None, int]],
+    days: int,
+    *,
+    end: date | None = None,
+) -> tuple[list[str], dict[str, list[dict[str, str | int]]]]:
+    """Group install events by version and fill daily counts for each series."""
+    by_version_day: dict[str, dict[date, int]] = {}
+    for dt, version, cnt in rows:
+        if isinstance(dt, datetime):
+            d = dt.astimezone(UTC).date()
+        else:
+            d = dt  # pragma: no cover
+        version_label = (version or "").strip() or UNKNOWN_INSTALL_VERSION
+        by_version_day.setdefault(version_label, {})[d] = int(cnt)
+
+    versions = sorted(by_version_day.keys(), key=_version_timeline_sort_key, reverse=True)
+    end_date = end or datetime.now(UTC).date()
+    start = end_date - timedelta(days=days - 1)
+
+    timeline_by_version: dict[str, list[dict[str, str | int]]] = {}
+    for version in versions:
+        counts = by_version_day[version]
+        series: list[dict[str, str | int]] = []
+        cur = start
+        while cur <= end_date:
+            series.append({"date": cur.isoformat(), "count": counts.get(cur, 0)})
+            cur += timedelta(days=1)
+        timeline_by_version[version] = series
+
+    return versions, timeline_by_version
 
 
 def _to_summary(pkg: PkgInfo, *, is_latest: bool = False) -> dict:
@@ -400,6 +467,12 @@ async def get_pkginfo_plist(
 async def pkginfo_install_reports_summary(
     pkg_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    days: int = Query(
+        INSTALL_REPORT_TIMELINE_DAYS,
+        ge=INSTALL_REPORT_TIMELINE_MIN_DAYS,
+        le=INSTALL_REPORT_TIMELINE_MAX_DAYS,
+        description="Number of calendar days for activity timelines",
+    ),
 ):
     """Counts by status, distinct machines, and daily install events for this pkginfo name."""
     result = await session.execute(select(PkgInfo).where(PkgInfo.id == pkg_id))
@@ -433,8 +506,10 @@ async def pkginfo_install_reports_summary(
     by_status = {row[0]: int(row[1]) for row in status_rows}
 
     event_ts = func.coalesce(ClientInstallReport.install_date, ClientInstallReport.created_at)
-    cutoff = datetime.now(UTC) - timedelta(days=INSTALL_REPORT_TIMELINE_DAYS - 1)
+    cutoff = datetime.now(UTC) - timedelta(days=days - 1)
     day_trunc = func.date_trunc("day", event_ts)
+    version_expr = func.coalesce(ClientInstallReport.item_version, UNKNOWN_INSTALL_VERSION)
+
     timeline_rows = (
         await session.execute(
             select(day_trunc, func.count(ClientInstallReport.id))
@@ -445,28 +520,27 @@ async def pkginfo_install_reports_summary(
         )
     ).all()
 
-    counts: dict[date, int] = {}
-    for dt, cnt in timeline_rows:
-        if isinstance(dt, datetime):
-            d = dt.astimezone(UTC).date()
-        else:
-            d = dt  # pragma: no cover
-        counts[d] = int(cnt)
+    version_timeline_rows = (
+        await session.execute(
+            select(day_trunc, version_expr, func.count(ClientInstallReport.id))
+            .where(ClientInstallReport.item_name == name)
+            .where(event_ts >= cutoff)
+            .group_by(day_trunc, version_expr)
+            .order_by(day_trunc, version_expr)
+        )
+    ).all()
 
-    end = datetime.now(UTC).date()
-    start = end - timedelta(days=INSTALL_REPORT_TIMELINE_DAYS - 1)
-    series: list[dict[str, int | str]] = []
-    cur = start
-    while cur <= end:
-        series.append({"date": cur.isoformat(), "count": counts.get(cur, 0)})
-        cur += timedelta(days=1)
+    versions, timeline_by_version = _build_install_timeline_by_version(version_timeline_rows, days)
 
     return {
         "item_name": name,
         "total_reports": total_reports,
         "unique_machines": unique_machines,
         "by_status": by_status,
-        "timeline": series,
+        "days": days,
+        "versions": versions,
+        "timeline_by_version": timeline_by_version,
+        "timeline": _filled_daily_counts(timeline_rows, days),
     }
 
 

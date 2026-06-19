@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -64,6 +65,8 @@ interface DataTableProps<TData, TValue> {
   rowSelection?: RowSelectionState
   onRowSelectionChange?: OnChangeFn<RowSelectionState>
   getRowId?: (row: TData) => string
+  onRowClick?: (row: TData) => void
+  rowClassName?: string
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -173,6 +176,8 @@ export function DataTable<TData, TValue>({
   rowSelection: rowSelectionProp,
   onRowSelectionChange: onRowSelectionChangeProp,
   getRowId: getRowIdProp,
+  onRowClick,
+  rowClassName,
 }: DataTableProps<TData, TValue>) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const [internalColumnVisibility, setInternalColumnVisibility] =
@@ -316,7 +321,12 @@ export function DataTable<TData, TValue>({
                   key={row.id}
                   data-state={row.getIsSelected() ? 'selected' : undefined}
                   className={
-                    row.getIsSelected() ? 'bg-muted/40 hover:bg-muted/50' : ''
+                    row.getIsSelected()
+                      ? cn('bg-muted/40 hover:bg-muted/50', rowClassName)
+                      : rowClassName
+                  }
+                  onClick={
+                    onRowClick ? () => onRowClick(row.original) : undefined
                   }
                 >
                   {row.getVisibleCells().map((cell) => (

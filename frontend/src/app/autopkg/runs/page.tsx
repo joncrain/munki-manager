@@ -10,9 +10,11 @@ import {
   X,
 } from 'lucide-react'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
+import { AutopkgScheduleEditorDialog } from '@/components/autopkg/schedule-editor-dialog'
 import { DataTable } from '@/components/data-table'
 import { PageHeading } from '@/components/page-heading'
 import { Badge } from '@/components/ui/badge'
@@ -38,8 +40,13 @@ import {
 } from '@/components/ui/select'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import {
+  installReportLinkKey,
+  usePkginfoLinksForInstallReports,
+} from '@/hooks/use-pkginfo-display-labels'
+import {
   type AutoPkgRecipeRead,
   type AutoPkgRunRead,
+  type AutoPkgScheduleRead,
   api,
   type PaginatedResponse,
   type UiSettingsRead,
@@ -49,6 +56,7 @@ import {
   canTriggerRunRecipe,
   RUNNER_LOCAL_DELIVERY_KEY,
   RUNNER_STORAGE_KEY,
+  runResultPkginfoKey,
   TrustVerifyFailureDialog,
   toastLocalRunRegistered,
   type VerifyTrustForRunResponse,
@@ -104,6 +112,9 @@ export default function AutoPkgRunsPage() {
     parseAsString.withDefault(''),
   )
   const [resultsRunId, setResultsRunId] = useState<string | null>(null)
+  const [scheduleEditorOpen, setScheduleEditorOpen] = useState(false)
+  const [editingSchedule, setEditingSchedule] =
+    useState<AutoPkgScheduleRead | null>(null)
   const queryClient = useQueryClient()
 
   const { data: resultsRun, isLoading: resultsRunLoading } = useQuery({
@@ -189,6 +200,20 @@ export default function AutoPkgRunsPage() {
 
   const runActionPending = triggerMutation.isPending || trustVerifying
 
+  const openScheduleEditor = async (scheduleId: string) => {
+    try {
+      const sch = await queryClient.fetchQuery({
+        queryKey: ['autopkg-schedule', scheduleId],
+        queryFn: () =>
+          api.get<AutoPkgScheduleRead>(`/autopkg/schedules/${scheduleId}`),
+      })
+      setEditingSchedule(sch)
+      setScheduleEditorOpen(true)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load schedule')
+    }
+  }
+
   const columns: ColumnDef<AutoPkgRunRead>[] = [
     {
       id: 'expand',
@@ -243,14 +268,31 @@ export default function AutoPkgRunsPage() {
     {
       id: 'schedule',
       header: 'Schedule',
-      cell: ({ row }) =>
-        row.original.schedule_name ? (
+      cell: ({ row }) => {
+        const { schedule_name, schedule_id } = row.original
+        if (!schedule_name) {
+          return <span className="text-muted-foreground">—</span>
+        }
+        if (schedule_id && canTriggerRuns) {
+          return (
+            <button
+              type="button"
+              className="max-w-[140px] truncate text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
+              onClick={(e) => {
+                e.stopPropagation()
+                void openScheduleEditor(schedule_id)
+              }}
+            >
+              {schedule_name}
+            </button>
+          )
+        }
+        return (
           <span className="max-w-[140px] truncate text-sm">
-            {row.original.schedule_name}
+            {schedule_name}
           </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
+        )
+      },
     },
     {
       accessorKey: 'triggered_by',
@@ -449,6 +491,16 @@ export default function AutoPkgRunsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AutopkgScheduleEditorDialog
+        open={scheduleEditorOpen}
+        onOpenChange={(open) => {
+          setScheduleEditorOpen(open)
+          if (!open) setEditingSchedule(null)
+        }}
+        editing={editingSchedule}
+        canEdit={canTriggerRuns}
+      />
     </div>
   )
 }
@@ -825,6 +877,23 @@ function statusVariantResult(s: string) {
 
 /** Scrollable results list inside the run dialog (header is fixed above). */
 function RunResultsScrollBody({ run }: { run: AutoPkgRunRead }) {
+  const linkRows = useMemo(
+    () =>
+      (run.results ?? [])
+        .filter(
+          (r) =>
+            r.imported_version ||
+            r.imported_pkginfo_path ||
+            r.status === 'imported',
+        )
+        .map((r) => ({
+          item_name: runResultPkginfoKey(r),
+          item_version: r.imported_version,
+        })),
+    [run.results],
+  )
+  const { data: pkgLinks } = usePkginfoLinksForInstallReports(linkRows)
+
   if (!run?.results?.length) {
     return (
       <div className="max-h-[min(65vh,calc(85vh-9rem))] overflow-y-auto px-6 py-4">
@@ -836,48 +905,68 @@ function RunResultsScrollBody({ run }: { run: AutoPkgRunRead }) {
   return (
     <div className="max-h-[min(65vh,calc(85vh-9rem))] min-h-0 overflow-y-auto px-6 py-4">
       <div className="space-y-2">
-        {run.results.map((result) => (
-          <div
-            key={result.id}
-            className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-              <Badge
-                variant={statusVariantResult(result.status)}
-                className="shrink-0"
-              >
-                {result.status}
-              </Badge>
-              <span className="font-medium break-words">
-                {result.imported_display_name?.trim() || result.recipe_name}
-              </span>
-              {result.imported_version && (
-                <span className="text-sm text-muted-foreground">
-                  v{result.imported_version}
-                </span>
-              )}
+        {run.results.map((result) => {
+          const title =
+            result.imported_display_name?.trim() || result.recipe_name
+          const isImported =
+            result.imported_version ||
+            result.imported_pkginfo_path ||
+            result.status === 'imported'
+          const pkgKey = runResultPkginfoKey(result)
+          const link = isImported
+            ? pkgLinks?.[installReportLinkKey(pkgKey, result.imported_version)]
+            : undefined
+
+          return (
+            <div
+              key={result.id}
+              className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                <Badge
+                  variant={statusVariantResult(result.status)}
+                  className="shrink-0"
+                >
+                  {result.status}
+                </Badge>
+                {link?.pkginfoId && isImported ? (
+                  <Link
+                    to={`/software/${link.pkginfoId}`}
+                    className="font-medium break-words text-primary underline-offset-4 hover:underline"
+                  >
+                    {title}
+                  </Link>
+                ) : (
+                  <span className="font-medium break-words">{title}</span>
+                )}
+                {result.imported_version && (
+                  <span className="text-sm text-muted-foreground">
+                    v{result.imported_version}
+                  </span>
+                )}
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Badge
+                  variant={
+                    result.approval_status === 'approved' ||
+                    result.approval_status === 'auto_approved'
+                      ? 'default'
+                      : result.approval_status === 'pending'
+                        ? 'secondary'
+                        : 'destructive'
+                  }
+                >
+                  {result.approval_status}
+                </Badge>
+                {result.duration_seconds != null && (
+                  <span className="text-sm text-muted-foreground">
+                    {result.duration_seconds}s
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Badge
-                variant={
-                  result.approval_status === 'approved' ||
-                  result.approval_status === 'auto_approved'
-                    ? 'default'
-                    : result.approval_status === 'pending'
-                      ? 'secondary'
-                      : 'destructive'
-                }
-              >
-                {result.approval_status}
-              </Badge>
-              {result.duration_seconds != null && (
-                <span className="text-sm text-muted-foreground">
-                  {result.duration_seconds}s
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
