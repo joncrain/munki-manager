@@ -248,8 +248,49 @@ export interface PkgInfoSummary {
   restart_action: string | null
   pending_metadata?: boolean
   is_latest?: boolean
+  deployment_status?: DeploymentStatus
+  shard_percent?: number | null
+  is_first_production_deploy?: boolean
+  in_manifest?: boolean
   created_at: string
   updated_at: string
+}
+
+export type DeploymentStatus =
+  | 'not_in_production'
+  | 'pending_rollout'
+  | 'sharding'
+  | 'fully_deployed'
+  | 'paused'
+
+export interface PkgInfoShardQueueItemRead {
+  id: string
+  name: string
+  version: string
+  display_name: string | null
+  deployment_status: DeploymentStatus
+  shard_rollout_status: string
+  shard_percent: number | null
+  is_first_production_deploy: boolean
+  in_manifest: boolean
+}
+
+export interface PkgInfoShardStatusRead {
+  active: boolean
+  summary: string
+  deployment_status: DeploymentStatus
+  shard_rollout_status: string
+  shard_percent: number | null
+  shard_started_at: string | null
+  rollout_days: number
+  current_day: number | null
+  is_first_production_deploy: boolean
+  in_manifest: boolean
+  manifest_names: string[]
+  manifest_warning: boolean
+  installable_condition: string | null
+  production_shard_enabled: boolean
+  net_new_shard_policy: string
 }
 
 export interface PkgInfoDetail extends PkgInfoSummary {
@@ -440,6 +481,9 @@ export interface PromotionChannelRead {
 
 export interface WorkflowPreferencesRead {
   default_promotion_channel_id: string | null
+  production_shard_days: number
+  production_shard_enabled: boolean
+  net_new_shard_policy: string
 }
 
 /** Matches backend `ConditionalItemBlock` (Munki conditional_items array entries). */

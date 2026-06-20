@@ -15,6 +15,8 @@ from automunki.models.munki import (
     Catalog,
     PkgInfo,
     PkgInfoCatalog,
+    ShardOverride,
+    ShardRolloutStatus,
 )
 from automunki.models.user import User
 from automunki.schemas.common import PaginatedResponse
@@ -25,6 +27,8 @@ from automunki.schemas.munki import (
     PkgInfoPromotionQueueItemRead,
     PkgInfoPromotionStatusRead,
     PkgInfoRead,
+    PkgInfoShardQueueItemRead,
+    PkgInfoShardStatusRead,
     PkgInfoSummary,
     PkgInfoUpdate,
     PromoteRequest,
@@ -40,6 +44,17 @@ from automunki.services.promotion import (
     build_pkginfo_channel_promotion_status,
     list_channel_promotion_queue_items,
     promote_pkginfo,
+)
+from automunki.services.shard_rollout import (
+    build_shard_status,
+    complete_shard_rollout,
+    deployment_fields_for_summary,
+    fetch_manifest_names_for_items,
+    list_shard_queue_items,
+    maybe_init_shard_after_catalog_change,
+    names_with_other_production_versions,
+    pause_shard_rollout,
+    start_shard_rollout,
 )
 
 
@@ -148,8 +163,13 @@ def _build_install_timeline_by_version(
     return versions, timeline_by_version
 
 
-def _to_summary(pkg: PkgInfo, *, is_latest: bool = False) -> dict:
-    return {
+def _to_summary(
+    pkg: PkgInfo,
+    *,
+    is_latest: bool = False,
+    deployment_extra: dict | None = None,
+) -> dict:
+    base = {
         "id": pkg.id,
         "name": pkg.name,
         "display_name": pkg.display_name,
@@ -168,6 +188,18 @@ def _to_summary(pkg: PkgInfo, *, is_latest: bool = False) -> dict:
         "created_at": pkg.created_at,
         "updated_at": pkg.updated_at,
     }
+    if deployment_extra:
+        base.update(deployment_extra)
+    else:
+        base.update(
+            {
+                "deployment_status": "not_in_production",
+                "shard_percent": None,
+                "is_first_production_deploy": False,
+                "in_manifest": False,
+            }
+        )
+    return base
 
 
 def _to_read(pkg: PkgInfo) -> dict:
@@ -227,6 +259,31 @@ def _to_read(pkg: PkgInfo) -> dict:
     return data
 
 
+async def _deployment_extra_for_pkginfos(
+    session: AsyncSession,
+    pkginfos: list[PkgInfo],
+) -> dict[uuid.UUID, dict]:
+    if not pkginfos:
+        return {}
+    names = list({p.name for p in pkginfos})
+    pkg_ids = [p.id for p in pkginfos]
+    in_manifest_names = await fetch_manifest_names_for_items(session, set(names))
+    upgrade_names = await names_with_other_production_versions(session, pkg_ids, names)
+    out: dict[uuid.UUID, dict] = {}
+    for pkg in pkginfos:
+        net_new = pkg.name not in upgrade_names
+        out[pkg.id] = deployment_fields_for_summary(
+            pkg,
+            in_manifest=pkg.name in in_manifest_names,
+            is_first_production_deploy=net_new,
+        )
+    return out
+
+
+def _matches_deployment_filter(deployment_status: str, filt: str) -> bool:
+    return deployment_status == filt
+
+
 @router.get("", response_model=PaginatedResponse)
 async def list_pkginfo(
     session: AsyncSession = Depends(get_session),
@@ -237,6 +294,7 @@ async def list_pkginfo(
     category: str | None = None,
     name: str | None = None,
     latest_only: bool = False,
+    deployment_status: str | None = None,
     sort_by: str = "name",
     sort_order: str = "asc",
 ):
@@ -266,6 +324,48 @@ async def list_pkginfo(
             )
         query = query.where(PkgInfo.id.in_(latest_ids))
 
+    if deployment_status:
+        result = await session.execute(query.options(selectinload(PkgInfo.catalogs)))
+        all_pkgs = list(result.scalars().unique().all())
+        deploy_extra = await _deployment_extra_for_pkginfos(session, all_pkgs)
+        filtered = [
+            p
+            for p in all_pkgs
+            if _matches_deployment_filter(deploy_extra[p.id]["deployment_status"], deployment_status)
+        ]
+        total = len(filtered)
+        if sort_by == "version":
+            reverse = sort_order != "asc"
+            filtered.sort(key=lambda p: loose_version_key(p.version), reverse=reverse)
+        else:
+            sort_col_name = (
+                sort_by if sort_by in ("name", "version", "category", "updated_at", "created_at") else "name"
+            )
+            reverse = sort_order != "asc"
+            filtered.sort(
+                key=lambda p: getattr(p, sort_col_name, p.name) or "",
+                reverse=reverse,
+            )
+        page_pkgs = filtered[(page - 1) * page_size : page * page_size]
+        page_deploy = {p.id: deploy_extra[p.id] for p in page_pkgs}
+        items = [
+            PkgInfoSummary(
+                **_to_summary(
+                    p,
+                    is_latest=is_latest_version(p.name, p.version, latest_by_name),
+                    deployment_extra=page_deploy[p.id],
+                )
+            )
+            for p in page_pkgs
+        ]
+        return PaginatedResponse(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=(total + page_size - 1) // page_size if total else 0,
+        )
+
     count_query = select(func.count()).select_from(query.subquery())
     total = (await session.execute(count_query)).scalar() or 0
 
@@ -287,6 +387,8 @@ async def list_pkginfo(
                 select(PkgInfo).where(PkgInfo.id.in_(page_ids)).options(selectinload(PkgInfo.catalogs))
             )
             pkg_by_id = {p.id: p for p in page_result.scalars().unique().all()}
+            page_pkgs = [pkg_by_id[pid] for pid in page_ids if pid in pkg_by_id]
+            deploy_extra = await _deployment_extra_for_pkginfos(session, page_pkgs)
             items = [
                 PkgInfoSummary(
                     **_to_summary(
@@ -296,6 +398,7 @@ async def list_pkginfo(
                             pkg_by_id[pkg_id].version,
                             latest_by_name,
                         ),
+                        deployment_extra=deploy_extra.get(pkg_id),
                     )
                 )
                 for pkg_id in page_ids
@@ -308,14 +411,17 @@ async def list_pkginfo(
         query = query.options(selectinload(PkgInfo.catalogs))
 
         result = await session.execute(query)
+        page_pkgs = list(result.scalars().unique().all())
+        deploy_extra = await _deployment_extra_for_pkginfos(session, page_pkgs)
         items = [
             PkgInfoSummary(
                 **_to_summary(
                     p,
                     is_latest=is_latest_version(p.name, p.version, latest_by_name),
+                    deployment_extra=deploy_extra.get(p.id),
                 )
             )
-            for p in result.scalars().unique().all()
+            for p in page_pkgs
         ]
 
     return PaginatedResponse(
@@ -348,6 +454,16 @@ async def get_promotion_queue(
     """Versions on a channel with auto-promote, in a path source catalog, with the next move + status."""
     rows = await list_channel_promotion_queue_items(session, limit=limit)
     return [PkgInfoPromotionQueueItemRead(**r) for r in rows]
+
+
+@router.get("/shard-queue", response_model=list[PkgInfoShardQueueItemRead])
+async def get_shard_queue(
+    limit: int = Query(20, ge=1, le=200),
+    session: AsyncSession = Depends(get_session),
+):
+    """Production shard rollouts: pending approval, active sharding, or paused."""
+    rows = await list_shard_queue_items(session, limit=limit)
+    return [PkgInfoShardQueueItemRead(**r) for r in rows]
 
 
 @router.post("/bulk-update", response_model=PkgInfoBulkUpdateResult)
@@ -399,6 +515,9 @@ async def bulk_update_pkginfo(
                     )
             await session.flush()
             changes["catalog_names"] = {"before": before_names, "after": names}
+            await maybe_init_shard_after_catalog_change(
+                session, pkg_id, user_email=user.email if user else "system:shard-rollout"
+            )
 
         reload = await session.execute(
             select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id)
@@ -448,6 +567,82 @@ async def get_pkginfo_promotion_status(
         raise HTTPException(status_code=404, detail="PkgInfo not found")
     raw = await build_pkginfo_channel_promotion_status(session, pkg)
     return PkgInfoPromotionStatusRead(**raw)
+
+
+@router.get("/{pkg_id}/shard-status", response_model=PkgInfoShardStatusRead)
+async def get_pkginfo_shard_status(
+    pkg_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one_or_none()
+    if not pkg or pkg.is_deleted:
+        raise HTTPException(status_code=404, detail="PkgInfo not found")
+    raw = await build_shard_status(session, pkg)
+    return PkgInfoShardStatusRead(**raw)
+
+
+@router.post("/{pkg_id}/shard/start")
+async def start_pkginfo_shard_rollout(
+    pkg_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one_or_none()
+    if not pkg or pkg.is_deleted:
+        raise HTTPException(status_code=404, detail="PkgInfo not found")
+    try:
+        await start_shard_rollout(
+            session,
+            pkg,
+            user_id=user.id if user else None,
+            user_email=user.email if user else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    await session.commit()
+    return {"message": "Production shard rollout started"}
+
+
+@router.post("/{pkg_id}/shard/pause")
+async def pause_pkginfo_shard_rollout(
+    pkg_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one_or_none()
+    if not pkg or pkg.is_deleted:
+        raise HTTPException(status_code=404, detail="PkgInfo not found")
+    await pause_shard_rollout(
+        session,
+        pkg,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+    )
+    await session.commit()
+    return {"message": "Production shard rollout paused"}
+
+
+@router.post("/{pkg_id}/shard/complete")
+async def complete_pkginfo_shard_rollout(
+    pkg_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one_or_none()
+    if not pkg or pkg.is_deleted:
+        raise HTTPException(status_code=404, detail="PkgInfo not found")
+    await complete_shard_rollout(
+        session,
+        pkg,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+    )
+    await session.commit()
+    return {"message": "Production shard rollout completed"}
 
 
 @router.get("/{pkg_id}/plist")
@@ -560,6 +755,9 @@ async def update_pkginfo(
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(pkg, field, value)
+    if "installable_condition" in update_data:
+        pkg.shard_rollout_status = ShardRolloutStatus.paused
+        pkg.shard_override = ShardOverride.pause
 
     await create_audit_entry(
         session,
@@ -652,6 +850,10 @@ async def update_pkginfo_catalogs(
     await session.flush()
     result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
     pkg = result.scalar_one()
+
+    await maybe_init_shard_after_catalog_change(
+        session, pkg_id, user_email=user.email if user else "system:shard-rollout"
+    )
 
     await create_audit_entry(
         session,

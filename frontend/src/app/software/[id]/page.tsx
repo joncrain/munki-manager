@@ -83,6 +83,7 @@ import {
   type PkgInfoDetail,
   type PkgInfoInstallReportSummary,
   type PkgInfoPromotionStatusRead,
+  type PkgInfoShardStatusRead,
   type PromotionChannelRead,
   type ReceiptItem,
 } from '@/lib/api'
@@ -1286,6 +1287,8 @@ export default function SoftwareDetailPage() {
               autoPromote={pkg.auto_promote ?? false}
               promotionChannelId={pkg.promotion_channel_id}
             />
+
+            <ProductionRolloutCard pkgId={id} canEdit={canMutateSoftware} />
           </div>
         </TabsContent>
         {/* ── Detection Tab ── */}
@@ -2689,6 +2692,156 @@ function CatalogsPromotionCard({
             ) : null}
           </>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function ProductionRolloutCard({
+  pkgId,
+  canEdit,
+}: {
+  pkgId: string
+  canEdit: boolean
+}) {
+  const queryClient = useQueryClient()
+  const { data: st, isLoading } = useQuery({
+    queryKey: ['pkginfo', pkgId, 'shard-status'],
+    queryFn: () =>
+      api.get<PkgInfoShardStatusRead>(`/pkginfo/${pkgId}/shard-status`),
+  })
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['pkginfo', pkgId] })
+    void queryClient.invalidateQueries({
+      queryKey: ['pkginfo', pkgId, 'shard-status'],
+    })
+    void queryClient.invalidateQueries({ queryKey: ['pkginfo'] })
+    void queryClient.invalidateQueries({ queryKey: ['pkginfo', 'shard-queue'] })
+  }
+
+  const startMut = useMutation({
+    mutationFn: () => api.post(`/pkginfo/${pkgId}/shard/start`, {}),
+    onSuccess: () => {
+      toast.success('Production rollout started')
+      invalidate()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const pauseMut = useMutation({
+    mutationFn: () => api.post(`/pkginfo/${pkgId}/shard/pause`, {}),
+    onSuccess: () => {
+      toast.success('Production rollout paused')
+      invalidate()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const completeMut = useMutation({
+    mutationFn: () => api.post(`/pkginfo/${pkgId}/shard/complete`, {}),
+    onSuccess: () => {
+      toast.success('Production rollout completed')
+      invalidate()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const busy = startMut.isPending || pauseMut.isPending || completeMut.isPending
+  const canStart =
+    st?.deployment_status === 'pending_rollout' ||
+    st?.shard_rollout_status === 'pending_approval'
+  const canPause = st?.deployment_status === 'sharding'
+  const canComplete =
+    st?.deployment_status === 'sharding' ||
+    st?.deployment_status === 'paused' ||
+    st?.deployment_status === 'pending_rollout'
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-3 space-y-0 pb-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+        <CardTitle>Production rollout</CardTitle>
+        {canEdit && st?.active ? (
+          <div className="flex flex-wrap gap-2">
+            {canStart ? (
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => startMut.mutate()}
+              >
+                Start rollout
+              </Button>
+            ) : null}
+            {canPause ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => pauseMut.mutate()}
+              >
+                Pause
+              </Button>
+            ) : null}
+            {canComplete ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => completeMut.mutate()}
+              >
+                Force complete
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : st ? (
+          <>
+            {st.manifest_warning ? (
+              <div className="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-2 text-sm text-red-800">
+                Net-new title referenced in manifests while not fully deployed.
+                High-shard devices may report missing catalog items until
+                rollout completes.
+                {st.manifest_names.length ? (
+                  <span className="mt-1 block text-xs">
+                    Manifests: {st.manifest_names.join(', ')}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            {st.is_first_production_deploy && !st.manifest_warning ? (
+              <Badge
+                variant="outline"
+                className="border-amber-500 text-amber-700"
+              >
+                First production deploy
+              </Badge>
+            ) : null}
+            <p className="text-sm text-muted-foreground">{st.summary}</p>
+            {st.deployment_status === 'sharding' && st.shard_percent != null ? (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>
+                    Day {st.current_day ?? '—'} of {st.rollout_days}
+                  </span>
+                  <span>{st.shard_percent}% fleet</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-amber-500"
+                    style={{ width: `${st.shard_percent}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
+            {st.installable_condition ? (
+              <p className="font-mono text-xs text-muted-foreground">
+                {st.installable_condition}
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </CardContent>
     </Card>
   )

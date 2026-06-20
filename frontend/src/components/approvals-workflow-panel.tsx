@@ -46,6 +46,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import {
   api,
   type CatalogRead,
@@ -232,7 +233,7 @@ export function ApprovalsWorkflowPanel() {
   })
 
   const patchPrefs = useMutation({
-    mutationFn: (body: { default_promotion_channel_id: string | null }) =>
+    mutationFn: (body: Partial<WorkflowPreferencesRead>) =>
       api.patch<WorkflowPreferencesRead>('/workflow/preferences', body),
     onSuccess: () => {
       toast.success('Workflow preferences updated')
@@ -332,7 +333,7 @@ export function ApprovalsWorkflowPanel() {
   const catalogOptions = catalogs ?? []
 
   return (
-    <>
+    <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Approval workflow</CardTitle>
@@ -465,6 +466,97 @@ export function ApprovalsWorkflowPanel() {
                 ))
               )}
             </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Production shard rollout</CardTitle>
+          <CardDescription>
+            Separate from catalog promotion. After a version lands in a{' '}
+            <strong>production</strong> catalog, the scheduler writes{' '}
+            <code className="text-xs">installable_condition</code> daily so
+            clients roll out by device shard. Manage per-version status on the{' '}
+            <Link
+              to="/software"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Software
+            </Link>{' '}
+            detail page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 max-w-md">
+          <div className="flex items-center gap-2">
+            <Switch
+              id="production-shard-enabled"
+              checked={prefs?.production_shard_enabled ?? true}
+              disabled={!canPrefs || patchPrefs.isPending}
+              onCheckedChange={(v) => {
+                if (!canPrefs) return
+                patchPrefs.mutate({ production_shard_enabled: v })
+              }}
+            />
+            <Label htmlFor="production-shard-enabled" className="font-normal">
+              Enable automatic shard tick
+            </Label>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="production-shard-days">
+              Rollout days (to 100%)
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Days until all devices are eligible (e.g. 4 → 25% per day).
+            </p>
+            <Input
+              id="production-shard-days"
+              type="number"
+              min={1}
+              max={30}
+              defaultValue={prefs?.production_shard_days ?? 4}
+              key={prefs?.production_shard_days}
+              disabled={!canPrefs || patchPrefs.isPending}
+              onBlur={(e) => {
+                if (!canPrefs) return
+                const n = Number.parseInt(e.target.value, 10)
+                if (!Number.isNaN(n) && n >= 1 && n <= 30) {
+                  patchPrefs.mutate({ production_shard_days: n })
+                }
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="net-new-shard-policy">
+              Net-new software policy
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              First-ever production deploy for a title — avoids catalog warnings
+              on high-shard machines when the title is already in manifests.
+            </p>
+            <Select
+              value={prefs?.net_new_shard_policy ?? 'skip_until_approved'}
+              onValueChange={(v) => {
+                if (!canPrefs) return
+                patchPrefs.mutate({ net_new_shard_policy: v })
+              }}
+              disabled={!canPrefs || patchPrefs.isPending}
+            >
+              <SelectTrigger id="net-new-shard-policy">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="skip_until_approved">
+                  Require approval before rollout (recommended)
+                </SelectItem>
+                <SelectItem value="immediate_full">
+                  Skip sharding (100% immediately)
+                </SelectItem>
+                <SelectItem value="same_as_upgrades">
+                  Same as upgrades (auto-shard)
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -649,6 +741,6 @@ export function ApprovalsWorkflowPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   )
 }

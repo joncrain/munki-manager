@@ -22,6 +22,7 @@ from automunki.models.munki import (
 )
 from automunki.services.audit import create_audit_entry
 from automunki.services.recipe_input_merge import merged_recipe_input
+from automunki.services.shard_rollout import maybe_init_shard_after_catalog_change
 
 logger = structlog.get_logger()
 
@@ -96,6 +97,7 @@ async def promote_pkginfo(
         version=pkg.version,
         target_catalog=target_catalog.name,
     )
+    await maybe_init_shard_after_catalog_change(session, pkg_info_id)
     return True
 
 
@@ -565,6 +567,9 @@ async def list_channel_promotion_queue_items(session: AsyncSession, *, limit: in
 
 async def run_all_auto_promotions(session: AsyncSession) -> dict:
     """Legacy per-title rules + channel tick (scheduler entry point)."""
+    from automunki.services.shard_rollout import run_production_shard_tick
+
     legacy = await check_auto_promotions(session)
     channel = await run_promotion_channel_tick(session)
-    return {"legacy_auto_time": legacy, "promotion_channels": channel}
+    shard = await run_production_shard_tick(session)
+    return {"legacy_auto_time": legacy, "promotion_channels": channel, "production_shard": shard}

@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
+import { DeploymentStatusBadge } from '@/components/deployment-status-badge'
 import { VersionWithLatestBadge } from '@/components/latest-version-badge'
 import { PageHeading } from '@/components/page-heading'
 import { SoftwareIcon } from '@/components/software-icon'
@@ -121,6 +122,19 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
     ),
   },
   {
+    accessorKey: 'deployment_status',
+    header: 'Deployment',
+    enableSorting: false,
+    cell: ({ row }) => (
+      <DeploymentStatusBadge
+        deploymentStatus={row.original.deployment_status ?? 'not_in_production'}
+        shardPercent={row.original.shard_percent ?? null}
+        isFirstProductionDeploy={row.original.is_first_production_deploy}
+        inManifest={row.original.in_manifest}
+      />
+    ),
+  },
+  {
     accessorKey: 'minimum_os_version',
     header: 'Min OS',
     cell: ({ row }) => (
@@ -186,6 +200,7 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   category: true,
   developer: true,
   catalog_names: true,
+  deployment_status: true,
   minimum_os_version: false,
   installer_type: false,
   unattended_install: false,
@@ -201,8 +216,16 @@ export default function SoftwarePage() {
   useDocumentTitle('Munki', 'Software')
 
   const [listState, setListState] = useAtom(softwarePageListAtom)
-  const { search, category, catalog, latestOnly, page, pageSize, sorting } =
-    listState
+  const {
+    search,
+    category,
+    catalog,
+    deploymentStatus,
+    latestOnly,
+    page,
+    pageSize,
+    sorting,
+  } = listState
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     DEFAULT_COLUMN_VISIBILITY,
   )
@@ -314,6 +337,7 @@ export default function SoftwarePage() {
       search,
       category,
       catalog,
+      deploymentStatus,
       latestOnly,
       sortBy,
       sortOrder,
@@ -327,6 +351,7 @@ export default function SoftwarePage() {
       if (search) params.set('search', search)
       if (category) params.set('category', category)
       if (catalog) params.set('catalog', catalog)
+      if (deploymentStatus) params.set('deployment_status', deploymentStatus)
       if (latestOnly) params.set('latest_only', 'true')
       return api.get<PaginatedResponse<PkgInfoSummary>>(
         `/pkginfo?${params.toString()}`,
@@ -344,7 +369,7 @@ export default function SoftwarePage() {
     queryFn: () => api.get<string[]>('/pkginfo/categories'),
   })
 
-  const hasFilters = search || category || catalog
+  const hasFilters = search || category || catalog || deploymentStatus
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
@@ -432,6 +457,31 @@ export default function SoftwarePage() {
             </SelectContent>
           </Select>
 
+          <Select
+            value={deploymentStatus || '__all__'}
+            onValueChange={(v) => {
+              setListState((p) => ({
+                ...p,
+                deploymentStatus: v === '__all__' ? '' : v,
+                page: 1,
+              }))
+            }}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Deployment" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All deployments</SelectItem>
+              <SelectItem value="fully_deployed">Fully deployed</SelectItem>
+              <SelectItem value="sharding">Sharding</SelectItem>
+              <SelectItem value="pending_rollout">Awaiting rollout</SelectItem>
+              <SelectItem value="paused">Paused</SelectItem>
+              <SelectItem value="not_in_production">
+                Not in production
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
           {hasFilters && (
             <Button
               variant="ghost"
@@ -443,6 +493,7 @@ export default function SoftwarePage() {
                   search: '',
                   category: '',
                   catalog: '',
+                  deploymentStatus: '',
                   page: 1,
                 }))
               }}

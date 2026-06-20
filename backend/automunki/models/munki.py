@@ -38,6 +38,26 @@ class PromotionStrategy(enum.StrEnum):
     auto_immediate = "auto_immediate"
 
 
+class ShardRolloutStatus(enum.StrEnum):
+    none = "none"
+    pending_approval = "pending_approval"
+    active = "active"
+    complete = "complete"
+    paused = "paused"
+    skipped = "skipped"
+
+
+class NetNewShardPolicy(enum.StrEnum):
+    skip_until_approved = "skip_until_approved"
+    immediate_full = "immediate_full"
+    same_as_upgrades = "same_as_upgrades"
+
+
+class ShardOverride(enum.StrEnum):
+    pause = "pause"
+    force_complete = "force_complete"
+
+
 class PkgInfo(UUIDMixin, Base):
     __tablename__ = "munki_pkginfo"
 
@@ -109,6 +129,19 @@ class PkgInfo(UUIDMixin, Base):
         ForeignKey("munki_promotion_channel.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+
+    shard_rollout_status: Mapped[ShardRolloutStatus] = mapped_column(
+        Enum(ShardRolloutStatus, name="shard_rollout_status_enum", native_enum=True),
+        nullable=False,
+        default=ShardRolloutStatus.none,
+        server_default="none",
+    )
+    shard_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    shard_percent: Mapped[int | None] = mapped_column(Integer)
+    shard_override: Mapped[ShardOverride | None] = mapped_column(
+        Enum(ShardOverride, name="shard_override_enum", native_enum=True),
+        nullable=True,
     )
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
@@ -332,4 +365,12 @@ class WorkflowPreferences(Base):
         UUID(as_uuid=True),
         ForeignKey("munki_promotion_channel.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    production_shard_days: Mapped[int] = mapped_column(Integer, nullable=False, default=4, server_default="4")
+    production_shard_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    net_new_shard_policy: Mapped[NetNewShardPolicy] = mapped_column(
+        Enum(NetNewShardPolicy, name="net_new_shard_policy_enum", native_enum=True),
+        nullable=False,
+        default=NetNewShardPolicy.skip_until_approved,
+        server_default="skip_until_approved",
     )

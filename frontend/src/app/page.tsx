@@ -48,6 +48,7 @@ import {
   type ManifestRead,
   type PaginatedResponse,
   type PkgInfoPromotionQueueItemRead,
+  type PkgInfoShardQueueItemRead,
   type RecipeTrustSummaryResponse,
   type TrustPendingCountResponse,
 } from '@/lib/api'
@@ -182,6 +183,14 @@ export default function DashboardPage() {
       api.get<PkgInfoPromotionQueueItemRead[]>(
         '/pkginfo/promotion-queue?limit=8',
       ),
+    enabled: canSeeSoftware,
+    staleTime: 30_000,
+  })
+
+  const { data: shardQueue, isLoading: shardQueueLoading } = useQuery({
+    queryKey: ['pkginfo', 'shard-queue'],
+    queryFn: () =>
+      api.get<PkgInfoShardQueueItemRead[]>('/pkginfo/shard-queue?limit=8'),
     enabled: canSeeSoftware,
     staleTime: 30_000,
   })
@@ -367,6 +376,64 @@ export default function DashboardPage() {
                       </ul>
                     </section>
                   )}
+                  <div className="space-y-3 border-t border-border/60 pt-3">
+                    <div>
+                      <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <Percent
+                          className="h-4 w-4 shrink-0 text-muted-foreground"
+                          aria-hidden
+                        />
+                        Production rollouts
+                      </h3>
+                      <p className="pt-0.5 text-xs text-muted-foreground">
+                        Shard rollout in progress or awaiting approval for
+                        net-new titles
+                      </p>
+                    </div>
+                    {shardQueueLoading ? (
+                      <p className="text-sm text-muted-foreground">Loading…</p>
+                    ) : !shardQueue?.length ? (
+                      <p className="text-sm text-muted-foreground">
+                        No active production shard rollouts.
+                      </p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {shardQueue.map((row) => {
+                          const title = row.display_name || row.name
+                          return (
+                            <li key={row.id}>
+                              <Link
+                                to={`/software/${row.id}`}
+                                className={cn(
+                                  'flex flex-col gap-0.5 rounded-md border p-2.5 text-sm transition-colors sm:flex-row sm:items-center sm:justify-between',
+                                  munkiAccents.software.overviewRow,
+                                )}
+                              >
+                                <div className="min-w-0">
+                                  <div className="truncate font-medium">
+                                    {title}{' '}
+                                    <span className="font-mono text-xs text-muted-foreground">
+                                      {row.version}
+                                    </span>
+                                  </div>
+                                  <div className="truncate text-xs text-muted-foreground">
+                                    {row.deployment_status.replace('_', ' ')}
+                                    {row.shard_percent != null
+                                      ? ` · ${row.shard_percent}%`
+                                      : ''}
+                                    {row.in_manifest &&
+                                    row.is_first_production_deploy
+                                      ? ' · in manifest'
+                                      : ''}
+                                  </div>
+                                </div>
+                              </Link>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               ) : null}
             </CardContent>

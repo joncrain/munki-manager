@@ -259,10 +259,44 @@ class PkgInfoSummary(BaseModel):
     restart_action: str | None = None
     pending_metadata: bool = False
     is_latest: bool = False
+    deployment_status: str = "not_in_production"
+    shard_percent: int | None = None
+    is_first_production_deploy: bool = False
+    in_manifest: bool = False
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PkgInfoShardQueueItemRead(BaseModel):
+    id: UUID
+    name: str
+    version: str
+    display_name: str | None
+    deployment_status: str
+    shard_rollout_status: str
+    shard_percent: int | None
+    is_first_production_deploy: bool
+    in_manifest: bool
+
+
+class PkgInfoShardStatusRead(BaseModel):
+    active: bool
+    summary: str
+    deployment_status: str
+    shard_rollout_status: str
+    shard_percent: int | None
+    shard_started_at: datetime | None
+    rollout_days: int
+    current_day: int | None
+    is_first_production_deploy: bool
+    in_manifest: bool
+    manifest_names: list[str]
+    manifest_warning: bool
+    installable_condition: str | None
+    production_shard_enabled: bool
+    net_new_shard_policy: str
 
 
 class CatalogAssignment(BaseModel):
@@ -413,7 +447,13 @@ class PromotionChannelRead(BaseModel):
 
 class WorkflowPreferencesRead(BaseModel):
     default_promotion_channel_id: UUID | None
+    production_shard_days: int = 4
+    production_shard_enabled: bool = True
+    net_new_shard_policy: str = "skip_until_approved"
 
 
 class WorkflowPreferencesUpdate(BaseModel):
     default_promotion_channel_id: UUID | None = None
+    production_shard_days: int | None = Field(None, ge=1, le=30)
+    production_shard_enabled: bool | None = None
+    net_new_shard_policy: str | None = None

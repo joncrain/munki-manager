@@ -115,6 +115,7 @@ from automunki.services.recipe_input_merge import (
     merged_recipe_input,
     substitute_input_vars,
 )
+from automunki.services.shard_rollout import maybe_init_shard_after_catalog_change
 from automunki.services.storage import (
     StorageNotConfiguredError,
     get_storage_backend,
@@ -2246,6 +2247,7 @@ async def _assign_pkginfo_catalogs_by_name(
                 entered_at=now,
             )
         )
+    await maybe_init_shard_after_catalog_change(session, pkg_id)
 
 
 async def _resolve_pkg_for_pending_import_result(

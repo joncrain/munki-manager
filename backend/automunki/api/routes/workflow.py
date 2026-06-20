@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from automunki.api.deps import get_session
 from automunki.core.security import current_optional_user
-from automunki.models.munki import PromotionChannel, WorkflowPreferences
+from automunki.models.munki import NetNewShardPolicy, PromotionChannel, WorkflowPreferences
 from automunki.models.user import User
 from automunki.schemas.munki import WorkflowPreferencesRead, WorkflowPreferencesUpdate
 from automunki.services.audit import create_audit_entry
@@ -16,7 +16,12 @@ async def get_workflow_preferences(session: AsyncSession = Depends(get_session))
     wp = await session.get(WorkflowPreferences, 1)
     if not wp:
         raise HTTPException(status_code=500, detail="Workflow preferences not initialized")
-    return WorkflowPreferencesRead(default_promotion_channel_id=wp.default_promotion_channel_id)
+    return WorkflowPreferencesRead(
+        default_promotion_channel_id=wp.default_promotion_channel_id,
+        production_shard_days=wp.production_shard_days,
+        production_shard_enabled=wp.production_shard_enabled,
+        net_new_shard_policy=wp.net_new_shard_policy.value,
+    )
 
 
 @router.patch("/preferences", response_model=WorkflowPreferencesRead)
@@ -36,6 +41,16 @@ async def patch_workflow_preferences(
             if not ch:
                 raise HTTPException(status_code=400, detail="Promotion channel not found")
         wp.default_promotion_channel_id = ch_id
+    if "production_shard_days" in patch:
+        wp.production_shard_days = patch["production_shard_days"]
+    if "production_shard_enabled" in patch:
+        wp.production_shard_enabled = patch["production_shard_enabled"]
+    if "net_new_shard_policy" in patch:
+        policy = patch["net_new_shard_policy"]
+        try:
+            wp.net_new_shard_policy = NetNewShardPolicy(policy)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid net_new_shard_policy: {policy}") from e
     await create_audit_entry(
         session,
         action="update",
@@ -48,4 +63,9 @@ async def patch_workflow_preferences(
     )
     await session.commit()
     await session.refresh(wp)
-    return WorkflowPreferencesRead(default_promotion_channel_id=wp.default_promotion_channel_id)
+    return WorkflowPreferencesRead(
+        default_promotion_channel_id=wp.default_promotion_channel_id,
+        production_shard_days=wp.production_shard_days,
+        production_shard_enabled=wp.production_shard_enabled,
+        net_new_shard_policy=wp.net_new_shard_policy.value,
+    )

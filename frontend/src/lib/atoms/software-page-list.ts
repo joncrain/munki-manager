@@ -8,6 +8,7 @@ export type SoftwarePageListState = {
   search: string
   category: string
   catalog: string
+  deploymentStatus: string
   latestOnly: boolean
   page: number
   pageSize: number
@@ -18,6 +19,7 @@ export const defaultSoftwarePageListState: SoftwarePageListState = {
   search: '',
   category: '',
   catalog: '',
+  deploymentStatus: '',
   latestOnly: true,
   page: 1,
   pageSize: 50,
@@ -37,6 +39,8 @@ function safeParseListState(
     if (typeof o.search === 'string') out.search = o.search
     if (typeof o.category === 'string') out.category = o.category
     if (typeof o.catalog === 'string') out.catalog = o.catalog
+    if (typeof o.deploymentStatus === 'string')
+      out.deploymentStatus = o.deploymentStatus
     if (typeof o.latestOnly === 'boolean') out.latestOnly = o.latestOnly
     if (typeof o.page === 'number' && o.page >= 1) out.page = o.page
     if (typeof o.pageSize === 'number' && o.pageSize >= 1)

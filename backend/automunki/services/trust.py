@@ -414,8 +414,8 @@ def _candidate_repos(identifier: str) -> list[str]:
         else:
             candidates.extend(
                 [
-                    f"autopkg/{repo_hint}-recipes",
                     f"autopkg/{org_or_user}-recipes",
+                    f"autopkg/{repo_hint}-recipes",
                     f"{org_or_user}/{repo_hint}-recipes",
                     "autopkg/recipes",
                 ]
@@ -436,7 +436,7 @@ def _candidate_paths(recipe_name: str, recipe_type: str) -> list[str]:
     Tries the most common patterns first.
     """
     base = f"{recipe_name}.{recipe_type}.recipe"
-    return [
+    paths = [
         f"{recipe_name}/{base}.yaml",
         f"{recipe_name}/{base}",
         f"{recipe_name}/{base}.plist",
@@ -444,6 +444,56 @@ def _candidate_paths(recipe_name: str, recipe_type: str) -> list[str]:
         f"{base}",
         f"{base}.plist",
     ]
+    # Identifier suffix may differ from the on-disk folder/file stem (e.g.
+    # ``com.github.hansen-m.download.zoomus`` → ``Zoom/Zoom.download.recipe``).
+    if recipe_name.lower() != recipe_name:
+        paths.extend(_candidate_paths(recipe_name.lower(), recipe_type))
+    return list(dict.fromkeys(paths))
+
+
+def _recipe_tree_scan_patterns(recipe_name: str, recipe_type: str) -> list[re.Pattern[str]]:
+    """Progressive path patterns for scanning a repo tree by recipe type.
+
+    Tier 1: ``{name}.{type}.recipe`` — fast path when identifier suffix matches
+    the filename (Firefox, Chrome, …).
+
+    Tier 2: ``.{type}.recipe`` — catches mismatched stems like Zoom's
+    ``zoomus`` identifier in ``Zoom/Zoom.download.recipe``.
+
+    Tier 3: any ``.recipe`` file — last resort when type alone is ambiguous.
+    """
+    return [
+        re.compile(
+            rf"{re.escape(recipe_name)}\.{re.escape(recipe_type)}\.recipe"
+            r"(\.yaml|\.plist)?$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"\.{re.escape(recipe_type)}\.recipe(\.yaml|\.plist)?$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"\.recipe(\.yaml|\.plist)?$", re.IGNORECASE),
+    ]
+
+
+async def _resolve_recipe_in_tree(
+    repo: str,
+    tree: list[dict],
+    identifier: str,
+    recipe_name: str,
+    recipe_type: str,
+) -> tuple[str, str] | None:
+    """Match ``identifier`` against recipe files in ``tree``, tier by tier."""
+    for pattern in _recipe_tree_scan_patterns(recipe_name, recipe_type):
+        for item in tree:
+            if item["type"] != "blob":
+                continue
+            if not pattern.search(item["path"]):
+                continue
+            data = await _parse_recipe(repo, item["path"])
+            if data and data.get("Identifier") == identifier:
+                return repo, item["path"]
+    return None
 
 
 async def _resolve_recipe(
@@ -506,24 +556,15 @@ async def _resolve_recipe(
         if not tree:
             continue
 
-        recipe_pattern = re.compile(
-            rf"{re.escape(recipe_name)}\.{re.escape(recipe_type)}\.recipe"
-            r"(\.yaml|\.plist)?$",
-            re.IGNORECASE,
-        )
-        for item in tree:
-            if item["type"] != "blob":
-                continue
-            if recipe_pattern.search(item["path"]):
-                data = await _parse_recipe(repo, item["path"])
-                if data and data.get("Identifier") == identifier:
-                    logger.info(
-                        "recipe_resolved_via_tree",
-                        identifier=identifier,
-                        repo=repo,
-                        path=item["path"],
-                    )
-                    return repo, item["path"]
+        resolved = await _resolve_recipe_in_tree(repo, tree, identifier, recipe_name, recipe_type)
+        if resolved:
+            logger.info(
+                "recipe_resolved_via_tree",
+                identifier=identifier,
+                repo=resolved[0],
+                path=resolved[1],
+            )
+            return resolved
 
     logger.warning("recipe_not_resolved", identifier=identifier, repos_tried=repos)
     return None
@@ -1385,12 +1426,12 @@ def merge_db_trust_into_plist_for_runner(plist: dict, trust_info: dict | None) -
                 }
     if not merged["parent_recipes"] and not merged["non_core_processors"]:
         return
-    parent = plist.setdefault("ParentRecipeTrustInfo", {})
-    parent.setdefault("parent_recipes", {})
-    parent.setdefault("non_core_processors", {})
-    for section in ("parent_recipes", "non_core_processors"):
-        for k, v in merged[section].items():
-            parent[section][k] = v
+    # Replace entirely so stale ``override_data`` entries (legacy identifiers,
+    # removed processors like Zoom7zUnarchiver) cannot leak into the runner.
+    plist["ParentRecipeTrustInfo"] = {
+        "parent_recipes": dict(merged["parent_recipes"]),
+        "non_core_processors": dict(merged["non_core_processors"]),
+    }
 
 
 def infer_repos_from_trust_info(trust_info: dict | None) -> list[str]:
