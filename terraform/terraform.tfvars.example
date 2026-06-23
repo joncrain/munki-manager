@@ -38,6 +38,12 @@ slack_webhook_url = ""
 # insights_enabled  = true
 # gemini_model      = "gemini-3.1-flash-lite-preview"
 
+# Read-only demo login (Try demo on /login). Requires AUTH_MODE=jwt (set in
+# containerapps.tf). On a public demo instance, set auth_demo_enabled = true
+# and close registration after bootstrapping your admin (see azure-deployment.md).
+# auth_demo_enabled = true
+# demo_jwt_lifetime_seconds = 14400  # optional; 4h demo sessions
+
 # Operator IPs that may reach the storage account control plane (for `az
 # storage` commands AND for `terraform plan/apply` state-refresh reads).
 # The Container Apps env's outbound IP is added automatically — only list

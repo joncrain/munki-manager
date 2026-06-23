@@ -9,3 +9,5 @@ class AuthConfigResponse(BaseModel):
     auth_mode: Literal["disabled", "jwt", "oidc"]
     #: Mirrors ``AUTH_REGISTRATION_OPEN``; ``False`` when ``AUTH_MODE=disabled``.
     registration_open: bool
+    #: ``True`` when ``AUTH_DEMO_ENABLED`` and auth is not ``disabled``.
+    demo_enabled: bool

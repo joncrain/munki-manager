@@ -143,6 +143,12 @@ class Settings(BaseSettings):
     #: When False, ``POST /auth/register`` returns 403 (use with ``auth_mode`` jwt or oidc).
     auth_registration_open: bool = True
 
+    #: When True, ``POST /auth/demo`` issues a read-only JWT for the seeded demo user.
+    auth_demo_enabled: bool = False
+
+    #: Optional shorter lifetime for demo JWTs. When unset, uses ``jwt_lifetime_seconds``.
+    demo_jwt_lifetime_seconds: int | None = None
+
     #: OIDC (used when ``auth_mode`` is ``oidc``)
     oidc_client_id: str = ""
     oidc_client_secret: str = ""

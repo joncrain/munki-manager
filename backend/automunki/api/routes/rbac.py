@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from automunki.api.deps import get_session
+from automunki.core.rbac_middleware import DEMO_USER_ID
 from automunki.models.rbac import AccessLevel, Role, RolePermission, UserRoleMembership
 from automunki.models.user import User
 from automunki.schemas.rbac_api import (
@@ -138,6 +139,8 @@ async def set_user_roles(
     user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user_id == DEMO_USER_ID:
+        raise HTTPException(status_code=400, detail="Cannot change roles for the demo account")
     for rid in body.role_ids:
         r = await session.get(Role, rid)
         if not r:
@@ -168,6 +171,8 @@ async def delete_user_account(
         raise HTTPException(status_code=401, detail="Not authenticated")
     if actor.id == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    if user_id == DEMO_USER_ID:
+        raise HTTPException(status_code=400, detail="Cannot delete the demo account")
     user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

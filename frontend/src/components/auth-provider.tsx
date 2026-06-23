@@ -34,6 +34,7 @@ export type MePayload = {
   user: AuthUser
   permissions: Record<string, string>
   auth_mode: string
+  is_demo?: boolean
 }
 
 const AuthContext = createContext<{
@@ -42,6 +43,8 @@ const AuthContext = createContext<{
   authMode: string | null
   /** From ``GET /auth/config`` — ``POST /auth/register`` allowed when true. */
   registrationOpen: boolean
+  /** Read-only demo session from ``POST /auth/demo``. */
+  isDemo: boolean
   loading: boolean
   refresh: () => Promise<void>
   logout: () => void
@@ -77,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => me?.auth_mode ?? serverAuthMode ?? null,
     [me, serverAuthMode],
   )
+
+  const isDemo = Boolean(me?.is_demo)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -205,6 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       me,
       authMode,
       registrationOpen,
+      isDemo,
       loading,
       refresh,
       logout,
@@ -215,6 +221,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       me,
       authMode,
       registrationOpen,
+      isDemo,
       loading,
       refresh,
       logout,

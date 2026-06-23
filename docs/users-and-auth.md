@@ -8,8 +8,10 @@ Munki Manager uses **FastAPI Users** with either **JWT** (email + password) or *
 |----------|---------|
 | `AUTH_MODE` | `disabled` — no login (dev-style; synthetic full-access user for API/UI). `jwt` — email/password only. `oidc` — SSO + optional password accounts. |
 | `AUTH_REGISTRATION_OPEN` | When `true`, new accounts can be created via the UI and `POST /api/v1/auth/register`. When `false`, that endpoint returns **403** (see [Closed registration](#closed-registration)). Ignored for `AUTH_MODE=disabled` (registration is never offered). |
+| `AUTH_DEMO_ENABLED` | When `true` (and `AUTH_MODE` is `jwt` or `oidc`), the login page shows **Try demo** and `POST /api/v1/auth/demo` issues a read-only JWT for the seeded demo user. Default `false`. |
+| `DEMO_JWT_LIFETIME_SECONDS` | Optional shorter lifetime for demo JWTs. When unset, demo tokens use `JWT_LIFETIME_SECONDS`. |
 
-`GET /api/v1/auth/config` returns `auth_mode` and `registration_open` so the SPA reads these values at runtime.
+`GET /api/v1/auth/config` returns `auth_mode`, `registration_open`, and `demo_enabled` so the SPA reads these values at runtime.
 
 ## Creating users
 
@@ -53,6 +55,24 @@ Practical options for new people:
 1. **OIDC** — add them in your IdP; they sign in when they first appear (account is created on first login).
 2. **Temporarily** set `AUTH_REGISTRATION_OPEN=true`, create accounts, then set it back to `false` and restart the API.
 3. Advanced: insert or script users via the database / FastAPI Users APIs (not documented here; prefer OIDC or a short registration window).
+
+## Demo mode (read-only, alongside real auth)
+
+For public or shared demo instances where visitors should browse without credentials but **cannot** change data:
+
+1. Set `AUTH_MODE=jwt` (or `oidc`) — **not** `disabled` (disabled grants full write).
+2. Set `AUTH_DEMO_ENABLED=true`.
+3. Run migrations so the seeded demo user exists (`demo@automunki.internal`, **Viewer** role).
+4. Keep `AUTH_REGISTRATION_OPEN=false` so strangers cannot create full accounts.
+5. Optionally set `DEMO_JWT_LIFETIME_SECONDS` for shorter demo sessions.
+
+Visitors click **Try demo (read-only)** on `/login`. The API returns a normal JWT; RBAC enforces **read** on operational pages and blocks mutations with **403**. The UI hides write controls via existing `canWrite` checks. `GET /auth/me` includes `is_demo: true` for the demo banner.
+
+**Security notes:**
+
+- Demo mode does **not** close other public endpoints (fleet check-in, enrollment profile download, schedule webhooks). Review [security-overview.md](security-overview.md) before exposing a demo instance on the internet.
+- The demo account cannot be deleted or reassigned roles via **Access** (API guards).
+- Real operators should sign in with their own accounts, not the demo user.
 
 ## First operator / admin access
 

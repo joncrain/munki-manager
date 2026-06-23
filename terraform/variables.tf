@@ -141,6 +141,19 @@ variable "gemini_model" {
   default     = "gemini-3.1-flash-lite-preview"
 }
 
+variable "auth_demo_enabled" {
+  description = "When true, the login page shows Try demo and POST /api/v1/auth/demo issues a read-only JWT (Viewer role). Keep false on admin instances; pair with AUTH_REGISTRATION_OPEN=false on public demos. Maps to AUTH_DEMO_ENABLED."
+  type        = bool
+  default     = false
+}
+
+variable "demo_jwt_lifetime_seconds" {
+  description = "Optional shorter JWT lifetime for demo sessions (seconds). Null = use the backend default (same as JWT_LIFETIME_SECONDS). Maps to DEMO_JWT_LIFETIME_SECONDS."
+  type        = number
+  default     = null
+  nullable    = true
+}
+
 # --- Container Apps sizing -----------------------------------------------
 
 variable "backend_cpu" {

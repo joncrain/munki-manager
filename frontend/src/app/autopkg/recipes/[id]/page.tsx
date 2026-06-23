@@ -64,7 +64,6 @@ export default function RecipeOverrideEditPage() {
     triggerRunMutation,
   } = useAutopkgQuickRun()
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed to the route param to reset local editor state
   useEffect(() => {
     setToolbar(null)
     setEditing(false)

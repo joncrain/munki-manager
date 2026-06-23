@@ -198,7 +198,7 @@ function DisabledDevSidebarFooter() {
 }
 
 export function SidebarUserMenu() {
-  const { me, refresh, logout, authMode } = useAuth()
+  const { me, refresh, logout, authMode, isDemo } = useAuth()
   const [theme, setTheme] = useAtom(themePreferenceAtom)
   const { palette, setPalette } = useColorPalette()
   const [mounted, setMounted] = useState(false)
@@ -250,6 +250,7 @@ export function SidebarUserMenu() {
   const label = profileLabel(me.user.display_name, me.user.email)
   const initials = initialsFromUser(me.user.display_name, me.user.email)
   const authEnabled = me.auth_mode !== 'disabled'
+  const subtitle = isDemo ? 'Read-only demo' : me.user.email
 
   return (
     <>
@@ -278,7 +279,7 @@ export function SidebarUserMenu() {
             <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
               <span className="truncate font-medium">{label}</span>
               <span className="truncate text-xs text-muted-foreground">
-                {me.user.email}
+                {subtitle}
               </span>
             </div>
             <ChevronDown className="size-4 shrink-0 opacity-60 group-data-[collapsible=icon]:hidden" />
@@ -294,9 +295,7 @@ export function SidebarUserMenu() {
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col space-y-0.5">
               <span className="text-sm font-medium">{label}</span>
-              <span className="text-xs text-muted-foreground">
-                {me.user.email}
-              </span>
+              <span className="text-xs text-muted-foreground">{subtitle}</span>
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />

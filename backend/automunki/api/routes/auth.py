@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -10,8 +11,8 @@ from automunki.api.deps import get_session
 from automunki.api.routes.oidc import router as oidc_router
 from automunki.core.config import settings
 from automunki.core.page_keys import ALL_PAGE_KEYS
-from automunki.core.rbac_middleware import DEV_USER_EMAIL, DEV_USER_ID
-from automunki.core.security import auth_backend, current_active_user, fastapi_users
+from automunki.core.rbac_middleware import DEMO_USER_ID, DEV_USER_EMAIL, DEV_USER_ID
+from automunki.core.security import auth_backend, current_active_user, fastapi_users, get_demo_jwt_strategy
 from automunki.models.user import User
 from automunki.schemas.auth_config import AuthConfigResponse
 from automunki.schemas.auth_me import MeResponse
@@ -22,6 +23,15 @@ from automunki.services.user_avatars import detect_image
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _demo_enabled() -> bool:
+    return settings.auth_demo_enabled and settings.auth_mode != "disabled"
+
+
+class DemoLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
 @router.get("/config", response_model=AuthConfigResponse)
 async def auth_config():
     """Expose ``AUTH_MODE`` so the SPA can read it at runtime."""
@@ -29,7 +39,21 @@ async def auth_config():
     return AuthConfigResponse(
         auth_mode=settings.auth_mode,
         registration_open=registration_open,
+        demo_enabled=_demo_enabled(),
     )
+
+
+@router.post("/demo", response_model=DemoLoginResponse)
+async def start_demo_session(session: AsyncSession = Depends(get_session)):
+    """Issue a read-only JWT for the seeded demo user (when ``AUTH_DEMO_ENABLED``)."""
+    if not _demo_enabled():
+        raise HTTPException(status_code=403, detail="Demo mode is not enabled")
+    user = await session.get(User, DEMO_USER_ID)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=503, detail="Demo user is not available")
+    strategy = get_demo_jwt_strategy()
+    jwt_token = await strategy.write_token(user)
+    return DemoLoginResponse(access_token=jwt_token)
 
 
 @router.get("/me", response_model=MeResponse)
@@ -49,6 +73,7 @@ async def read_me(request: Request, session: AsyncSession = Depends(get_session)
             ),
             permissions={k: "write" for k in ALL_PAGE_KEYS},
             auth_mode=settings.auth_mode,
+            is_demo=False,
         )
     user = getattr(request.state, "user", None)
     if user is None:
@@ -58,6 +83,7 @@ async def read_me(request: Request, session: AsyncSession = Depends(get_session)
         user=UserRead.model_validate(user),
         permissions=perms,
         auth_mode=settings.auth_mode,
+        is_demo=user.id == DEMO_USER_ID,
     )
 
 

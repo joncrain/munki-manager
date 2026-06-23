@@ -307,8 +307,21 @@ az containerapp update \
   --set-env-vars AUTH_REGISTRATION_OPEN=false
 ```
 
-(Or set this in `containerapps.tf` and re-apply — but a one-shot `update` is
-quicker.)
+(Or set `AUTH_REGISTRATION_OPEN=false` in `containerapps.tf` and re-apply.)
+
+(Optional) Enable read-only demo login for visitors who should browse without
+credentials. Set `auth_demo_enabled = true` in `terraform/terraform.tfvars`
+(or use the one-shot `az containerapp update` below), then `make tf-apply`.
+Keep `AUTH_REGISTRATION_OPEN=false` on public demos so strangers cannot create
+full accounts. See [users-and-auth.md](users-and-auth.md#demo-mode-read-only-alongside-real-auth).
+
+```sh
+az containerapp update \
+  -g rg-munkimanager -n ca-munkimanager-backend \
+  --set-env-vars AUTH_DEMO_ENABLED=true
+```
+
+(Or wire `var.auth_demo_enabled` in `containerapps.tf` and re-apply.)
 
 ## Day-2 operations
 

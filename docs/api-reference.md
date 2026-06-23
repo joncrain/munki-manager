@@ -25,8 +25,9 @@ The **local AutoPkg daemon** (`poll_local_autopkg.sh`) may instead use a shared 
 | POST | `/auth/login` | Login with email/password, returns JWT (OAuth2 password flow) |
 | POST | `/auth/logout` | Logout (invalidate JWT cookie/header) |
 | POST | `/auth/register` | Register a new user. Returns **403** when `AUTH_REGISTRATION_OPEN=false`. |
-| GET | `/auth/config` | Public; returns `{ auth_mode, registration_open, oidc_enabled, ... }` so the SPA can adapt at runtime. |
-| GET | `/auth/me` | Compatibility wrapper around the FastAPI Users `/users/me` with extra Munki Manager fields (page write/read sets, `is_superuser`, `role`, avatar URL). |
+| POST | `/auth/demo` | Public when `AUTH_DEMO_ENABLED=true`; returns a read-only JWT for the seeded demo user (Viewer role). **403** when demo is disabled. |
+| GET | `/auth/config` | Public; returns `{ auth_mode, registration_open, demo_enabled, ... }` so the SPA can adapt at runtime. |
+| GET | `/auth/me` | Compatibility wrapper around the FastAPI Users `/users/me` with extra Munki Manager fields (page write/read sets, `is_superuser`, `role`, `is_demo`, avatar URL). |
 | GET | `/users/me` | FastAPI Users profile. |
 | PATCH | `/users/me` | Update current user profile. |
 | POST | `/users/me/avatar` | Multipart `file` (PNG/JPEG, ≤ 1 MB); bytes stored in `user.avatar_data` (Postgres bytea). |

@@ -23,6 +23,8 @@ from automunki.services.permissions import can_access, get_effective_permissions
 # Use example.com so Pydantic email validation accepts the placeholder (.local is reserved).
 DEV_USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
 DEV_USER_EMAIL = "dev@example.com"
+DEMO_USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000002")
+DEMO_USER_EMAIL = "demo@automunki.internal"
 LOCAL_RUNNER_AUDIT_EMAIL = "local-runner@automunki.internal"
 
 # When ``auth_mode=disabled``, route handlers that read ``request.state.user`` (e.g. RBAC
@@ -102,6 +104,8 @@ def _is_public_path(path: str, method: str) -> bool:
         p = path.rstrip("/")
         if p == "/api/v1/auth/me":
             return False
+        if p == "/api/v1/auth/demo" and method == "POST":
+            return True
         return True
     # Fleet agent / AutoPkg runner (no interactive user JWT)
     if path.rstrip("/") == "/api/v1/reports/checkin" and method == "POST":

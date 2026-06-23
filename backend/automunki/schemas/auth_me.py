@@ -7,3 +7,4 @@ class MeResponse(BaseModel):
     user: UserRead
     permissions: dict[str, str]
     auth_mode: str
+    is_demo: bool = False

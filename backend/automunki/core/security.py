@@ -52,6 +52,14 @@ def get_jwt_strategy() -> JWTStrategy:
     )
 
 
+def get_demo_jwt_strategy() -> JWTStrategy:
+    lifetime = settings.demo_jwt_lifetime_seconds or settings.jwt_lifetime_seconds
+    return JWTStrategy(
+        secret=settings.secret_key,
+        lifetime_seconds=lifetime,
+    )
+
+
 auth_backend = AuthenticationBackend(
     name="jwt",
     transport=bearer_transport,

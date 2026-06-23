@@ -21,6 +21,7 @@ export default function LoginPage() {
   const registered = searchParams.get('registered') === '1'
   const [authMode, setAuthMode] = useState<string | null>(null)
   const [registrationOpen, setRegistrationOpen] = useState(false)
+  const [demoEnabled, setDemoEnabled] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -35,10 +36,12 @@ export default function LoginPage() {
         const data = (await res.json()) as {
           auth_mode: string
           registration_open?: boolean
+          demo_enabled?: boolean
         }
         if (!cancelled) {
           setAuthMode(data.auth_mode)
           setRegistrationOpen(Boolean(data.registration_open))
+          setDemoEnabled(Boolean(data.demo_enabled))
         }
       } catch {
         if (!cancelled) {
@@ -79,6 +82,29 @@ export default function LoginPage() {
         </Button>
       </div>
     )
+  }
+
+  async function startDemo() {
+    setError(null)
+    setPending(true)
+    try {
+      const res = await fetch(`${apiRoot}/auth/demo`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setError(
+          typeof err.detail === 'string'
+            ? err.detail
+            : 'Demo mode is not available.',
+        )
+        return
+      }
+      const data = (await res.json()) as { access_token: string }
+      localStorage.setItem('token', data.access_token)
+      await refresh()
+      navigate(next)
+    } finally {
+      setPending(false)
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -172,6 +198,19 @@ export default function LoginPage() {
               Continue with SSO
             </Button>
           </a>
+        </div>
+      ) : null}
+      {demoEnabled ? (
+        <div className={authMode === 'oidc' ? 'pt-4' : 'border-t pt-4'}>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={pending}
+            onClick={() => void startDemo()}
+          >
+            {pending ? 'Starting demo…' : 'Try demo (read-only)'}
+          </Button>
         </div>
       ) : null}
     </div>

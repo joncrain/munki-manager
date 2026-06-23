@@ -210,6 +210,17 @@ resource "azurerm_container_app" "backend" {
         value = "true"
       }
       env {
+        name  = "AUTH_DEMO_ENABLED"
+        value = var.auth_demo_enabled ? "true" : "false"
+      }
+      dynamic "env" {
+        for_each = var.demo_jwt_lifetime_seconds != null ? [var.demo_jwt_lifetime_seconds] : []
+        content {
+          name  = "DEMO_JWT_LIFETIME_SECONDS"
+          value = tostring(env.value)
+        }
+      }
+      env {
         name  = "DEBUG"
         value = "false"
       }

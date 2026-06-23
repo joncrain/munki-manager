@@ -2,6 +2,7 @@ import { useAtom } from 'jotai'
 import { Suspense } from 'react'
 import { useLocation } from 'react-router-dom'
 import { AppSidebar } from '@/components/app-sidebar'
+import { DemoBanner } from '@/components/demo-banner'
 import {
   SidebarInset,
   SidebarProvider,
@@ -41,6 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="min-w-0 flex-1 overflow-auto">
           <Suspense>
             <div className="container mx-auto min-w-0 max-w-full p-4 sm:p-6">
+              <DemoBanner />
               {children}
             </div>
           </Suspense>

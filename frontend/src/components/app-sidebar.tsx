@@ -260,7 +260,7 @@ export function AppSidebar() {
                         {showTrustBadge ? (
                           <SidebarMenuBadge
                             title="Pending trust approvals"
-                            className="bg-gruvbox-yellow text-primary-foreground"
+                            className="bg-gruvbox-yellow text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground"
                           >
                             {pendingTrustCount > 99 ? '99+' : pendingTrustCount}
                           </SidebarMenuBadge>
