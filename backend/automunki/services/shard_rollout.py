@@ -27,6 +27,7 @@ from automunki.models.munki import (
     WorkflowPreferences,
 )
 from automunki.services.audit import create_audit_entry
+from automunki.services.loose_version import loose_version_key
 
 logger = structlog.get_logger()
 
@@ -70,6 +71,46 @@ def installable_condition_for_percent(percent: int) -> str | None:
     if percent >= 100:
         return None
     return f"shard <= {percent}"
+
+
+def clamp_shard_percent(value: int) -> int:
+    return min(100, max(0, int(value)))
+
+
+def scheduled_shard_percent(
+    pkg: PkgInfo,
+    rollout_days: int,
+    *,
+    now: datetime | None = None,
+) -> int | None:
+    if not pkg.shard_started_at:
+        return None
+    return compute_shard_percent(
+        pkg.shard_started_at,
+        rollout_days,
+        now=now or datetime.now(UTC),
+    )
+
+
+def effective_shard_percent(
+    pkg: PkgInfo,
+    rollout_days: int,
+    *,
+    now: datetime | None = None,
+) -> int | None:
+    if pkg.shard_percent_override is not None:
+        return clamp_shard_percent(pkg.shard_percent_override)
+    return scheduled_shard_percent(pkg, rollout_days, now=now)
+
+
+def apply_shard_percent_to_pkg(pkg: PkgInfo, percent: int) -> None:
+    pct = clamp_shard_percent(percent)
+    pkg.shard_percent = pct
+    pkg.installable_condition = installable_condition_for_percent(pct)
+    if pct >= 100:
+        pkg.shard_rollout_status = ShardRolloutStatus.complete
+        pkg.shard_percent_override = None
+        pkg.shard_override = None
 
 
 def parse_shard_percent_from_condition(condition: str | None) -> int | None:
@@ -374,6 +415,7 @@ async def complete_shard_rollout(
     user_email: str | None = None,
 ) -> None:
     before = pkg.installable_condition
+    pkg.shard_percent_override = None
     _apply_shard_fields(
         pkg,
         status=ShardRolloutStatus.complete,
@@ -395,8 +437,68 @@ async def complete_shard_rollout(
     )
 
 
+async def set_shard_percent_override(
+    session: AsyncSession,
+    pkg: PkgInfo,
+    shard_percent: int | None,
+    *,
+    user_id: uuid.UUID | None = None,
+    user_email: str | None = None,
+) -> None:
+    if not pkg_in_production(pkg):
+        raise ValueError("Package is not in a production catalog")
+
+    wp = await get_workflow_preferences(session)
+    before = {
+        "shard_percent": pkg.shard_percent,
+        "shard_percent_override": pkg.shard_percent_override,
+        "installable_condition": pkg.installable_condition,
+    }
+
+    if shard_percent is None:
+        pkg.shard_percent_override = None
+        if pkg.shard_started_at:
+            pct = scheduled_shard_percent(pkg, wp.production_shard_days) or 0
+            apply_shard_percent_to_pkg(pkg, pct)
+            if pct < 100 and pkg.shard_rollout_status == ShardRolloutStatus.complete:
+                pkg.shard_rollout_status = ShardRolloutStatus.active
+        else:
+            pkg.shard_percent = None
+            pkg.installable_condition = None
+    else:
+        pct = clamp_shard_percent(shard_percent)
+        pkg.shard_percent_override = pct
+        apply_shard_percent_to_pkg(pkg, pct)
+        if pct < 100 and pkg.shard_rollout_status in (
+            ShardRolloutStatus.none,
+            ShardRolloutStatus.pending_approval,
+            ShardRolloutStatus.paused,
+        ):
+            pkg.shard_rollout_status = ShardRolloutStatus.active
+            if not pkg.shard_started_at:
+                pkg.shard_started_at = datetime.now(UTC)
+
+    await create_audit_entry(
+        session,
+        action="shard_override",
+        entity_type="pkg_info",
+        entity_id=str(pkg.id),
+        entity_name=f"{pkg.name} {pkg.version}",
+        user_id=user_id,
+        user_email=user_email,
+        before_snapshot=before,
+        after_snapshot={
+            "shard_percent": pkg.shard_percent,
+            "shard_percent_override": pkg.shard_percent_override,
+            "installable_condition": pkg.installable_condition,
+        },
+    )
+
+
 async def _tick_one_pkg(session: AsyncSession, pkg: PkgInfo, wp: WorkflowPreferences, now: datetime) -> bool:
     if pkg.shard_override in (ShardOverride.pause, ShardOverride.force_complete):
+        return False
+    if pkg.shard_percent_override is not None:
         return False
     if pkg.shard_rollout_status != ShardRolloutStatus.active:
         return False
@@ -450,10 +552,13 @@ async def build_shard_status(session: AsyncSession, pkg: PkgInfo) -> dict:
     net_new = await is_first_production_deploy(session, pkg) if in_prod else False
     manifest_names = await fetch_manifests_referencing_name(session, pkg.name)
     in_manifest = bool(manifest_names)
+    now = datetime.now(UTC)
+    scheduled_pct = scheduled_shard_percent(pkg, wp.production_shard_days, now=now) if in_prod else None
+    effective_pct = effective_shard_percent(pkg, wp.production_shard_days, now=now) if in_prod else None
     deployment_status = derive_deployment_status(
         in_production=in_prod,
         shard_rollout_status=pkg.shard_rollout_status,
-        shard_percent=pkg.shard_percent,
+        shard_percent=effective_pct if effective_pct is not None else pkg.shard_percent,
     )
     rollout_days = wp.production_shard_days
     current_day: int | None = None
@@ -469,8 +574,11 @@ async def build_shard_status(session: AsyncSession, pkg: PkgInfo) -> dict:
     elif deployment_status == "pending_rollout":
         summary_parts.append("Awaiting operator approval to start production shard rollout.")
     elif deployment_status == "sharding":
-        pct = pkg.shard_percent or 0
-        summary_parts.append(f"Sharding to production: {pct}% of fleet eligible (day {current_day} of {rollout_days}).")
+        pct = effective_pct or pkg.shard_percent or 0
+        override_note = " (manual override)" if pkg.shard_percent_override is not None else ""
+        summary_parts.append(
+            f"Sharding to production: {pct}% of fleet eligible{override_note} (day {current_day} of {rollout_days})."
+        )
     elif deployment_status == "paused":
         summary_parts.append("Shard rollout is paused; installable condition will not be updated automatically.")
     else:
@@ -493,7 +601,9 @@ async def build_shard_status(session: AsyncSession, pkg: PkgInfo) -> dict:
         "summary": " ".join(summary_parts),
         "deployment_status": deployment_status,
         "shard_rollout_status": pkg.shard_rollout_status.value,
-        "shard_percent": pkg.shard_percent,
+        "shard_percent": effective_pct if effective_pct is not None else pkg.shard_percent,
+        "shard_percent_override": pkg.shard_percent_override,
+        "scheduled_shard_percent": scheduled_pct,
         "shard_started_at": pkg.shard_started_at,
         "rollout_days": rollout_days,
         "current_day": current_day,
@@ -586,3 +696,59 @@ def deployment_fields_for_summary(
         "is_first_production_deploy": is_first_production_deploy if in_prod else False,
         "in_manifest": in_manifest,
     }
+
+
+def pick_canonical_production_pkg(pkgs: list[PkgInfo]) -> PkgInfo | None:
+    """Highest-version pkginfo in production — drives list-column deployment display."""
+    if not pkgs:
+        return None
+    return max(pkgs, key=lambda p: loose_version_key(p.version))
+
+
+async def fetch_production_pkginfos_for_name(session: AsyncSession, name: str) -> list[PkgInfo]:
+    result = await session.execute(
+        select(PkgInfo)
+        .options(selectinload(PkgInfo.catalogs))
+        .join(PkgInfoCatalog, PkgInfo.id == PkgInfoCatalog.pkg_info_id)
+        .join(Catalog, PkgInfoCatalog.catalog_id == Catalog.id)
+        .where(
+            PkgInfo.name == name,
+            PkgInfo.is_deleted.is_(False),
+            Catalog.is_production.is_(True),
+        )
+    )
+    return list(result.scalars().unique().all())
+
+
+async def deployment_fields_for_software_name(
+    session: AsyncSession,
+    name: str,
+    *,
+    in_manifest: bool,
+) -> dict:
+    """Product-level deployment column: same status for every version row of ``name``."""
+    pkgs = await fetch_production_pkginfos_for_name(session, name)
+    canonical = pick_canonical_production_pkg(pkgs)
+    if not canonical:
+        return {
+            "deployment_status": "not_in_production",
+            "shard_percent": None,
+            "is_first_production_deploy": False,
+            "in_manifest": in_manifest,
+        }
+    net_new = await is_first_production_deploy(session, canonical)
+    wp = await get_workflow_preferences(session)
+    effective_pct = effective_shard_percent(canonical, wp.production_shard_days)
+    fields = deployment_fields_for_summary(
+        canonical,
+        in_manifest=in_manifest,
+        is_first_production_deploy=net_new,
+    )
+    if effective_pct is not None:
+        fields["shard_percent"] = effective_pct
+        fields["deployment_status"] = derive_deployment_status(
+            in_production=True,
+            shard_rollout_status=canonical.shard_rollout_status,
+            shard_percent=effective_pct,
+        )
+    return fields

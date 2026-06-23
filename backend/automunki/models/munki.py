@@ -139,6 +139,7 @@ class PkgInfo(UUIDMixin, Base):
     )
     shard_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     shard_percent: Mapped[int | None] = mapped_column(Integer)
+    shard_percent_override: Mapped[int | None] = mapped_column(Integer)
     shard_override: Mapped[ShardOverride | None] = mapped_column(
         Enum(ShardOverride, name="shard_override_enum", native_enum=True),
         nullable=True,

@@ -75,3 +75,34 @@ def test_compute_shard_percent_zero_rollout_days():
     started = datetime(2026, 6, 1, tzinfo=UTC)
     now = started + timedelta(days=1)
     assert compute_shard_percent(started, 0, now=now) == 100
+
+
+def test_pick_canonical_production_pkg_highest_version():
+    from types import SimpleNamespace
+
+    from automunki.services.shard_rollout import pick_canonical_production_pkg
+
+    older = SimpleNamespace(name="App", version="1.0.0")
+    newer = SimpleNamespace(name="App", version="2.0.0")
+    assert pick_canonical_production_pkg([older, newer]) is newer
+    assert pick_canonical_production_pkg([]) is None
+
+
+def test_clamp_shard_percent():
+    from automunki.services.shard_rollout import clamp_shard_percent
+
+    assert clamp_shard_percent(150) == 100
+    assert clamp_shard_percent(-5) == 0
+    assert clamp_shard_percent(75) == 75
+
+
+def test_effective_shard_percent_prefers_override():
+    from types import SimpleNamespace
+
+    from automunki.services.shard_rollout import effective_shard_percent
+
+    pkg = SimpleNamespace(
+        shard_percent_override=60,
+        shard_started_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    assert effective_shard_percent(pkg, 4) == 60

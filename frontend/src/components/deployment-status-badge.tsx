@@ -1,5 +1,9 @@
 import { AlertTriangle, CheckCircle2, Clock, PauseCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import {
+  manifestRiskBadgeClass,
+  manifestRiskProgressClass,
+} from '@/lib/shard-ui'
 import { cn } from '@/lib/utils'
 
 export type DeploymentStatus =
@@ -8,6 +12,9 @@ export type DeploymentStatus =
   | 'sharding'
   | 'fully_deployed'
   | 'paused'
+
+const cellClass =
+  'flex min-h-[2.5rem] min-w-[8rem] flex-col justify-center gap-1'
 
 export function DeploymentStatusBadge({
   deploymentStatus,
@@ -26,62 +33,77 @@ export function DeploymentStatusBadge({
     (deploymentStatus === 'pending_rollout' || deploymentStatus === 'sharding')
 
   if (deploymentStatus === 'not_in_production') {
-    return <span className="text-sm text-muted-foreground">—</span>
+    return (
+      <div className={cellClass}>
+        <Badge
+          variant="outline"
+          className="w-fit gap-1 border-border text-muted-foreground"
+        >
+          Not in production
+        </Badge>
+      </div>
+    )
   }
 
   if (deploymentStatus === 'fully_deployed') {
     return (
-      <Badge
-        variant="outline"
-        className="gap-1 border-emerald-500/50 text-emerald-700"
-      >
-        <CheckCircle2 className="h-3 w-3" />
-        Deployed
-      </Badge>
+      <div className={cellClass}>
+        <Badge
+          variant="outline"
+          className="w-fit gap-1 border-emerald-500/50 text-emerald-700 dark:border-emerald-500/40 dark:text-emerald-400"
+        >
+          <CheckCircle2 className="h-3 w-3" />
+          Deployed
+        </Badge>
+      </div>
     )
   }
 
   if (deploymentStatus === 'pending_rollout') {
     return (
-      <Badge
-        variant="outline"
-        className={cn(
-          'gap-1 border-amber-500 text-amber-700',
-          manifestRisk && 'border-red-500 text-red-700',
-        )}
-        title={
-          manifestRisk
-            ? 'Net-new title in manifests before rollout started — high-shard devices may warn'
-            : 'Awaiting approval to start production shard rollout'
-        }
-      >
-        {manifestRisk ? (
-          <AlertTriangle className="h-3 w-3" />
-        ) : (
-          <Clock className="h-3 w-3" />
-        )}
-        Awaiting rollout
-      </Badge>
+      <div className={cellClass}>
+        <Badge
+          variant="outline"
+          className={cn(
+            'w-fit gap-1 border-amber-500/70 text-amber-800 dark:border-amber-500/50 dark:text-amber-300',
+            manifestRisk && manifestRiskBadgeClass,
+          )}
+          title={
+            manifestRisk
+              ? 'Net-new title in manifests before rollout started — high-shard devices may warn'
+              : 'Awaiting approval to start production shard rollout'
+          }
+        >
+          {manifestRisk ? (
+            <AlertTriangle className="h-3 w-3" />
+          ) : (
+            <Clock className="h-3 w-3" />
+          )}
+          Awaiting rollout
+        </Badge>
+      </div>
     )
   }
 
   if (deploymentStatus === 'paused') {
     return (
-      <Badge variant="secondary" className="gap-1">
-        <PauseCircle className="h-3 w-3" />
-        Paused
-      </Badge>
+      <div className={cellClass}>
+        <Badge variant="secondary" className="w-fit gap-1">
+          <PauseCircle className="h-3 w-3" />
+          Paused
+        </Badge>
+      </div>
     )
   }
 
   const pct = shardPercent ?? 0
   return (
-    <div className="flex min-w-[7rem] flex-col gap-1">
+    <div className={cellClass}>
       <Badge
         variant="outline"
         className={cn(
-          'gap-1 border-amber-500/70 text-amber-800',
-          manifestRisk && 'border-red-500 text-red-700',
+          'w-fit gap-1 border-amber-500/70 text-amber-800 dark:border-amber-500/50 dark:text-amber-300',
+          manifestRisk && manifestRiskBadgeClass,
         )}
         title={
           manifestRisk
@@ -92,11 +114,11 @@ export function DeploymentStatusBadge({
         {manifestRisk && <AlertTriangle className="h-3 w-3" />}
         Sharding {pct}%
       </Badge>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+      <div className="h-1 w-full max-w-32 overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
-            'h-full rounded-full bg-amber-500 transition-all',
-            manifestRisk && 'bg-red-500',
+            'h-full rounded-full bg-amber-500 dark:bg-amber-400',
+            manifestRisk && manifestRiskProgressClass,
           )}
           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         />

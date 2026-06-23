@@ -101,6 +101,15 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
       ) : null,
   },
   {
+    accessorKey: 'install_count',
+    header: 'Installs',
+    cell: ({ row }) => (
+      <span className="tabular-nums text-sm">
+        {row.original.install_count ?? 0}
+      </span>
+    ),
+  },
+  {
     accessorKey: 'developer',
     header: 'Developer',
     cell: ({ row }) => (
@@ -198,7 +207,8 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   display_name: true,
   version: true,
   category: true,
-  developer: true,
+  install_count: true,
+  developer: false,
   catalog_names: true,
   deployment_status: true,
   minimum_os_version: false,

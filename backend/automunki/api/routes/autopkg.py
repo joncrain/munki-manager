@@ -858,6 +858,24 @@ def _recipe_input_dict(recipe: AutoPkgRecipe) -> dict | None:
     return m if m else None
 
 
+def _recipe_audit_snapshot(recipe: AutoPkgRecipe) -> dict:
+    """Stable recipe state for audit before/after snapshots (editable DB fields only)."""
+    return {
+        "identifier": recipe.identifier,
+        "name": recipe.name,
+        "parent_recipe": recipe.parent_recipe,
+        "source_repo_full_name": recipe.source_repo_full_name,
+        "is_enabled": recipe.is_enabled,
+        "extract_icon_enabled": recipe.extract_icon_enabled,
+        "auto_promote": recipe.auto_promote,
+        "promotion_channel_id": str(recipe.promotion_channel_id) if recipe.promotion_channel_id else None,
+        "override_data": recipe.override_data,
+        "trust_info": recipe.trust_info,
+        "input_variables": recipe.input_variables,
+        "trust_status": recipe.trust_status,
+    }
+
+
 def _recipe_pkginfo_key(recipe: AutoPkgRecipe) -> str:
     inp = _recipe_input_dict(recipe)
     if isinstance(inp, dict):
@@ -1418,11 +1436,13 @@ async def update_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
+    before = _recipe_audit_snapshot(recipe)
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(recipe, field, value)
 
     _normalize_pkginfo_into_override_only(recipe)
+    after = _recipe_audit_snapshot(recipe)
 
     await create_audit_entry(
         session,
@@ -1432,6 +1452,8 @@ async def update_recipe(
         entity_name=recipe.name,
         user_id=user.id if user else None,
         user_email=user.email if user else None,
+        before_snapshot=before,
+        after_snapshot=after,
         changes=update_data,
     )
 
@@ -1450,6 +1472,8 @@ async def delete_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
+    before = _recipe_audit_snapshot(recipe)
+
     await create_audit_entry(
         session,
         action="delete",
@@ -1458,6 +1482,7 @@ async def delete_recipe(
         entity_name=recipe.name,
         user_id=user.id if user else None,
         user_email=user.email if user else None,
+        before_snapshot=before,
     )
 
     await session.delete(recipe)

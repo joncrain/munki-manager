@@ -32,6 +32,7 @@ from automunki.schemas.munki import (
     PkgInfoSummary,
     PkgInfoUpdate,
     PromoteRequest,
+    ShardPercentOverrideRequest,
 )
 from automunki.services.audit import create_audit_entry
 from automunki.services.loose_version import loose_version_key
@@ -48,12 +49,12 @@ from automunki.services.promotion import (
 from automunki.services.shard_rollout import (
     build_shard_status,
     complete_shard_rollout,
-    deployment_fields_for_summary,
+    deployment_fields_for_software_name,
     fetch_manifest_names_for_items,
     list_shard_queue_items,
     maybe_init_shard_after_catalog_change,
-    names_with_other_production_versions,
     pause_shard_rollout,
+    set_shard_percent_override,
     start_shard_rollout,
 )
 
@@ -163,11 +164,30 @@ def _build_install_timeline_by_version(
     return versions, timeline_by_version
 
 
+async def _fetch_install_counts_by_name(
+    session: AsyncSession,
+    names: list[str],
+) -> dict[str, int]:
+    """Installed-status install report rows grouped by Munki item name."""
+    if not names:
+        return {}
+    rows = (
+        await session.execute(
+            select(ClientInstallReport.item_name, func.count())
+            .where(ClientInstallReport.item_name.in_(names))
+            .where(ClientInstallReport.status == "installed")
+            .group_by(ClientInstallReport.item_name)
+        )
+    ).all()
+    return {name: int(cnt) for name, cnt in rows}
+
+
 def _to_summary(
     pkg: PkgInfo,
     *,
     is_latest: bool = False,
     deployment_extra: dict | None = None,
+    install_count: int = 0,
 ) -> dict:
     base = {
         "id": pkg.id,
@@ -185,6 +205,7 @@ def _to_summary(
         "restart_action": pkg.restart_action,
         "pending_metadata": pkg.pending_metadata,
         "is_latest": is_latest,
+        "install_count": install_count,
         "created_at": pkg.created_at,
         "updated_at": pkg.updated_at,
     }
@@ -266,18 +287,15 @@ async def _deployment_extra_for_pkginfos(
     if not pkginfos:
         return {}
     names = list({p.name for p in pkginfos})
-    pkg_ids = [p.id for p in pkginfos]
     in_manifest_names = await fetch_manifest_names_for_items(session, set(names))
-    upgrade_names = await names_with_other_production_versions(session, pkg_ids, names)
-    out: dict[uuid.UUID, dict] = {}
-    for pkg in pkginfos:
-        net_new = pkg.name not in upgrade_names
-        out[pkg.id] = deployment_fields_for_summary(
-            pkg,
-            in_manifest=pkg.name in in_manifest_names,
-            is_first_production_deploy=net_new,
+    name_fields: dict[str, dict] = {}
+    for name in names:
+        name_fields[name] = await deployment_fields_for_software_name(
+            session,
+            name,
+            in_manifest=name in in_manifest_names,
         )
-    return out
+    return {pkg.id: name_fields[pkg.name] for pkg in pkginfos}
 
 
 def _matches_deployment_filter(deployment_status: str, filt: str) -> bool:
@@ -334,9 +352,16 @@ async def list_pkginfo(
             if _matches_deployment_filter(deploy_extra[p.id]["deployment_status"], deployment_status)
         ]
         total = len(filtered)
+        install_counts = await _fetch_install_counts_by_name(session, list({p.name for p in filtered}))
         if sort_by == "version":
             reverse = sort_order != "asc"
             filtered.sort(key=lambda p: loose_version_key(p.version), reverse=reverse)
+        elif sort_by == "install_count":
+            reverse = sort_order != "asc"
+            filtered.sort(
+                key=lambda p: (install_counts.get(p.name, 0), p.name or ""),
+                reverse=reverse,
+            )
         else:
             sort_col_name = (
                 sort_by if sort_by in ("name", "version", "category", "updated_at", "created_at") else "name"
@@ -354,6 +379,7 @@ async def list_pkginfo(
                     p,
                     is_latest=is_latest_version(p.name, p.version, latest_by_name),
                     deployment_extra=page_deploy[p.id],
+                    install_count=install_counts.get(p.name, 0),
                 )
             )
             for p in page_pkgs
@@ -389,6 +415,7 @@ async def list_pkginfo(
             pkg_by_id = {p.id: p for p in page_result.scalars().unique().all()}
             page_pkgs = [pkg_by_id[pid] for pid in page_ids if pid in pkg_by_id]
             deploy_extra = await _deployment_extra_for_pkginfos(session, page_pkgs)
+            install_counts = await _fetch_install_counts_by_name(session, list({p.name for p in page_pkgs}))
             items = [
                 PkgInfoSummary(
                     **_to_summary(
@@ -399,6 +426,44 @@ async def list_pkginfo(
                             latest_by_name,
                         ),
                         deployment_extra=deploy_extra.get(pkg_id),
+                        install_count=install_counts.get(pkg_by_id[pkg_id].name, 0),
+                    )
+                )
+                for pkg_id in page_ids
+                if pkg_id in pkg_by_id
+            ]
+    elif sort_by == "install_count":
+        id_name_result = await session.execute(query.with_only_columns(PkgInfo.id, PkgInfo.name))
+        id_name_rows = id_name_result.all()
+        install_counts = await _fetch_install_counts_by_name(session, list({row.name for row in id_name_rows}))
+        reverse = sort_order != "asc"
+        sorted_rows = sorted(
+            id_name_rows,
+            key=lambda row: (install_counts.get(row.name, 0), row.name or ""),
+            reverse=reverse,
+        )
+        page_rows = sorted_rows[(page - 1) * page_size : page * page_size]
+        page_ids = [row.id for row in page_rows]
+        if not page_ids:
+            items = []
+        else:
+            page_result = await session.execute(
+                select(PkgInfo).where(PkgInfo.id.in_(page_ids)).options(selectinload(PkgInfo.catalogs))
+            )
+            pkg_by_id = {p.id: p for p in page_result.scalars().unique().all()}
+            page_pkgs = [pkg_by_id[pid] for pid in page_ids if pid in pkg_by_id]
+            deploy_extra = await _deployment_extra_for_pkginfos(session, page_pkgs)
+            items = [
+                PkgInfoSummary(
+                    **_to_summary(
+                        pkg_by_id[pkg_id],
+                        is_latest=is_latest_version(
+                            pkg_by_id[pkg_id].name,
+                            pkg_by_id[pkg_id].version,
+                            latest_by_name,
+                        ),
+                        deployment_extra=deploy_extra.get(pkg_id),
+                        install_count=install_counts.get(pkg_by_id[pkg_id].name, 0),
                     )
                 )
                 for pkg_id in page_ids
@@ -413,12 +478,14 @@ async def list_pkginfo(
         result = await session.execute(query)
         page_pkgs = list(result.scalars().unique().all())
         deploy_extra = await _deployment_extra_for_pkginfos(session, page_pkgs)
+        install_counts = await _fetch_install_counts_by_name(session, list({p.name for p in page_pkgs}))
         items = [
             PkgInfoSummary(
                 **_to_summary(
                     p,
                     is_latest=is_latest_version(p.name, p.version, latest_by_name),
                     deployment_extra=deploy_extra.get(p.id),
+                    install_count=install_counts.get(p.name, 0),
                 )
             )
             for p in page_pkgs
@@ -643,6 +710,32 @@ async def complete_pkginfo_shard_rollout(
     )
     await session.commit()
     return {"message": "Production shard rollout completed"}
+
+
+@router.put("/{pkg_id}/shard/override", response_model=PkgInfoShardStatusRead)
+async def set_pkginfo_shard_override(
+    pkg_id: uuid.UUID,
+    data: ShardPercentOverrideRequest,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one_or_none()
+    if not pkg or pkg.is_deleted:
+        raise HTTPException(status_code=404, detail="PkgInfo not found")
+    try:
+        await set_shard_percent_override(
+            session,
+            pkg,
+            data.shard_percent,
+            user_id=user.id if user else None,
+            user_email=user.email if user else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    await session.commit()
+    raw = await build_shard_status(session, pkg)
+    return PkgInfoShardStatusRead(**raw)
 
 
 @router.get("/{pkg_id}/plist")

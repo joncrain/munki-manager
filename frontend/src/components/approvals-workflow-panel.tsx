@@ -46,6 +46,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import {
   api,
@@ -292,6 +293,13 @@ export function ApprovalsWorkflowPanel() {
   const [newChannelName, setNewChannelName] = useState('')
   const [newChannelDescription, setNewChannelDescription] = useState('')
   const [stepDrafts, setStepDrafts] = useState<StepDraft[]>([])
+  const [shardDays, setShardDays] = useState(4)
+
+  useEffect(() => {
+    if (prefs?.production_shard_days != null) {
+      setShardDays(prefs.production_shard_days)
+    }
+  }, [prefs?.production_shard_days])
 
   const stepSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -502,27 +510,31 @@ export function ApprovalsWorkflowPanel() {
               Enable automatic shard tick
             </Label>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="production-shard-days">
-              Rollout days (to 100%)
-            </Label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="production-shard-days">
+                Rollout days (to 100%)
+              </Label>
+              <span className="font-mono text-sm tabular-nums">
+                {shardDays} days
+              </span>
+            </div>
             <p className="text-xs text-muted-foreground">
               Days until all devices are eligible (e.g. 4 → 25% per day).
             </p>
-            <Input
+            <Slider
               id="production-shard-days"
-              type="number"
               min={1}
               max={30}
-              defaultValue={prefs?.production_shard_days ?? 4}
-              key={prefs?.production_shard_days}
+              step={1}
+              value={[shardDays]}
               disabled={!canPrefs || patchPrefs.isPending}
-              onBlur={(e) => {
+              onValueChange={(v) => setShardDays(v[0] ?? 4)}
+              onValueCommit={(v) => {
                 if (!canPrefs) return
-                const n = Number.parseInt(e.target.value, 10)
-                if (!Number.isNaN(n) && n >= 1 && n <= 30) {
-                  patchPrefs.mutate({ production_shard_days: n })
-                }
+                const n = v[0] ?? 4
+                setShardDays(n)
+                patchPrefs.mutate({ production_shard_days: n })
               }}
             />
           </div>

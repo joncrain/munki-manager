@@ -36,6 +36,13 @@ and the quick-start; everything else is in this directory.
 | **[architecture.md](architecture.md)** | System architecture, data flow, database schema (Munki + AutoPkg + Reporting + RBAC), tech stack. |
 | **[contributing.md](contributing.md)** | Repo layout, dev setup (uv for backend, bun for frontend), how to add an endpoint, migrations, tests, lint. |
 
+### "I'm presenting Munki Manager."
+
+| Path | When to read |
+|------|--------------|
+| **[talk/README.md](talk/README.md)** | Conference slides (Marp), image placeholders, export commands. |
+| **[talk/if-you-give-a-macadmin-a-db.md](talk/if-you-give-a-macadmin-a-db.md)** | Draft deck — *If You Give a MacAdmin a DB…* (~15 min). |
+
 ## Conventions
 
 - Filenames are kebab-case `.md`.

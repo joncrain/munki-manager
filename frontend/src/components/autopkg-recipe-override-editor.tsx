@@ -185,14 +185,14 @@ function KeyValueEditor({
             value={entry.key}
             onChange={(e) => update(i, 'key', e.target.value)}
             placeholder={keyPlaceholder}
-            className="font-mono text-sm flex-[2]"
+            className="font-mono text-sm flex-2"
             readOnly={readOnly}
           />
           <Input
             value={entry.value}
             onChange={(e) => update(i, 'value', e.target.value)}
             placeholder={valuePlaceholder}
-            className="font-mono text-sm flex-[3]"
+            className="font-mono text-sm flex-3"
             readOnly={readOnly}
           />
           {!readOnly && (
@@ -552,19 +552,25 @@ export type RecipeOverrideToolbarApi = {
   isSaving: boolean
   isDeleting: boolean
   canSave: boolean
+  isDirty: boolean
 }
 
 export function RecipeOverrideEditor({
   recipe,
   onDeleted,
+  onSaved,
   readOnly = false,
   onToolbarApiChange,
+  onRegisterDelete,
 }: {
   recipe: AutoPkgRecipeRead
   onDeleted?: () => void
+  onSaved?: () => void
   readOnly?: boolean
   /** When not read-only, exposes save/delete for a header toolbar (see recipe detail page). */
   onToolbarApiChange?: (api: RecipeOverrideToolbarApi | null) => void
+  /** Exposes delete dialog opener even in read-only mode (detail page Delete button). */
+  onRegisterDelete?: (openDelete: (() => void) | null) => void
 }) {
   const queryClient = useQueryClient()
   const inputVarsRaw = recipe.input_variables as Record<string, unknown> | null
@@ -595,6 +601,7 @@ export function RecipeOverrideEditor({
     useState<Record<string, unknown>>(initialPkginfo)
   const [iconRevision, setIconRevision] = useState(0)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [baselineSnapshot, setBaselineSnapshot] = useState<string>('')
 
   useEffect(() => {
     const iv = recipe.input_variables as Record<string, unknown> | null
@@ -609,7 +616,45 @@ export function RecipeOverrideEditor({
     setPromotionChannelId(recipe.promotion_channel_id ?? null)
     setNonPkginfoEntries(kvFromDict(extractNonPkginfoInput(nextCanonical)))
     setPkginfo(extractPkginfo(nextCanonical))
-  }, [recipe])
+    // Dirty tracking baseline: capture a normalized snapshot of the recipe's
+    // current persisted state so we can detect unsaved edits.
+    const baselineNonPkg = extractNonPkginfoInput(nextCanonical)
+    const baselinePkg = extractPkginfo(nextCanonical)
+    const baselineHasPkg = Object.keys(baselinePkg).length > 0
+    const baselineInput: Record<string, unknown> = {
+      ...(baselineNonPkg ?? {}),
+      ...(baselineHasPkg ? { pkginfo: baselinePkg } : {}),
+    }
+    const baselinePayload: Record<string, unknown> = {
+      identifier: recipe.identifier,
+      name: recipe.name,
+      parent_recipe: recipe.parent_recipe ?? null,
+      source_repo_full_name: recipe.source_repo_full_name ?? null,
+      is_enabled: recipe.is_enabled,
+      extract_icon_enabled: recipe.extract_icon_enabled ?? false,
+      auto_promote: recipe.auto_promote,
+      promotion_channel_id: recipe.promotion_channel_id ?? null,
+      ...(hasStoredOverridePlist
+        ? {
+            override_data: {
+              ...(((recipe.override_data as Record<string, unknown> | null) ??
+                {}) as Record<string, unknown>),
+              Identifier: recipe.identifier,
+              ParentRecipe: recipe.parent_recipe ?? '',
+              Input: baselineInput,
+            },
+            input_variables:
+              baselineNonPkg && Object.keys(baselineNonPkg).length > 0
+                ? baselineNonPkg
+                : null,
+          }
+        : {
+            input_variables:
+              Object.keys(baselineInput).length > 0 ? baselineInput : null,
+          }),
+    }
+    setBaselineSnapshot(JSON.stringify(baselinePayload))
+  }, [recipe, hasStoredOverridePlist])
 
   const updatePkgField = (key: string, value: unknown) => {
     setPkginfo((prev) => ({ ...prev, [key]: value }))
@@ -720,6 +765,10 @@ export function RecipeOverrideEditor({
       queryClient.invalidateQueries({
         queryKey: ['autopkg-recipe-runner-plist', recipe.id],
       })
+      queryClient.invalidateQueries({
+        queryKey: ['audit', 'autopkg_recipe', recipe.id],
+      })
+      onSaved?.()
     },
     onError: (err: Error) => toast.error(err.message),
   })
@@ -808,6 +857,60 @@ export function RecipeOverrideEditor({
     saveMutation.mutate,
   ])
 
+  const currentSnapshot = useMemo(() => {
+    const nonPkgDict = kvToDict(nonPkginfoEntries)
+    const hasPkginfo = Object.keys(pkginfo).length > 0
+    const fullInput: Record<string, unknown> = {
+      ...nonPkgDict,
+      ...(hasPkginfo ? { pkginfo } : {}),
+    }
+
+    const payload: Record<string, unknown> = {
+      identifier,
+      name,
+      parent_recipe: parentRecipe || null,
+      source_repo_full_name: sourceRepoFullName.trim() || null,
+      is_enabled: isEnabled,
+      extract_icon_enabled: extractIconEnabled,
+      auto_promote: autoPromote,
+      promotion_channel_id: promotionChannelId,
+    }
+
+    if (hasStoredOverridePlist) {
+      const prev =
+        (recipe.override_data as Record<string, unknown> | null) ?? {}
+      payload.override_data = {
+        ...prev,
+        Identifier: identifier,
+        ParentRecipe: parentRecipe || '',
+        Input: fullInput,
+      }
+      payload.input_variables =
+        Object.keys(nonPkgDict).length > 0 ? nonPkgDict : null
+    } else {
+      payload.input_variables =
+        Object.keys(fullInput).length > 0 ? fullInput : null
+    }
+
+    return JSON.stringify(payload)
+  }, [
+    nonPkginfoEntries,
+    pkginfo,
+    identifier,
+    name,
+    parentRecipe,
+    sourceRepoFullName,
+    isEnabled,
+    extractIconEnabled,
+    autoPromote,
+    promotionChannelId,
+    hasStoredOverridePlist,
+    recipe.override_data,
+  ])
+
+  const isDirty =
+    baselineSnapshot !== '' && currentSnapshot !== baselineSnapshot
+
   const openDeleteDialog = useCallback(() => {
     setDeleteDialogOpen(true)
   }, [])
@@ -827,7 +930,10 @@ export function RecipeOverrideEditor({
       isSaving: saveMutation.isPending,
       isDeleting: deleteMutation.isPending,
       canSave:
-        Boolean(name.trim() && identifier.trim()) && !saveMutation.isPending,
+        Boolean(name.trim() && identifier.trim()) &&
+        isDirty &&
+        !saveMutation.isPending,
+      isDirty,
     })
   }, [
     readOnly,
@@ -838,7 +944,14 @@ export function RecipeOverrideEditor({
     deleteMutation.isPending,
     name,
     identifier,
+    isDirty,
   ])
+
+  useEffect(() => {
+    if (!onRegisterDelete) return
+    onRegisterDelete(openDeleteDialog)
+    return () => onRegisterDelete(null)
+  }, [onRegisterDelete, openDeleteDialog])
 
   const catalogNames = (catalogs ?? []).map((c) => c.name)
   const nonPkginfoCount = nonPkginfoEntries.length
@@ -882,7 +995,7 @@ export function RecipeOverrideEditor({
         <TabsList
           className={cn(
             'h-auto w-full flex-wrap gap-2 rounded-xl p-2 sm:p-2.5',
-            'border border-gruvbox-orange/20 bg-gradient-to-br from-muted/90 via-muted/55 to-muted/25',
+            'border border-gruvbox-orange/20 bg-linear-to-br from-muted/90 via-muted/55 to-muted/25',
             'shadow-sm transition-[border-color,box-shadow] duration-300 ease-out',
             'hover:border-gruvbox-orange/40 hover:shadow-md dark:border-gruvbox-orange/30 dark:hover:border-gruvbox-orange/50',
           )}

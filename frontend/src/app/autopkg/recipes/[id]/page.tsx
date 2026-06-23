@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2, Play, Save, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ArrowLeft, Loader2, Pencil, Play, Save, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '@/components/auth-provider'
 import {
@@ -43,7 +43,13 @@ export default function RecipeOverrideEditPage() {
   const params = useParams()
   const navigate = useNavigate()
   const id = params.id as string
+  const [editing, setEditing] = useState(false)
+  const [editorKey, setEditorKey] = useState(0)
   const [toolbar, setToolbar] = useState<RecipeOverrideToolbarApi | null>(null)
+  const [openDelete, setOpenDelete] = useState<(() => void) | null>(null)
+
+  const effectiveEditing = editing && canEditRecipes
+  const hasUnsavedChanges = Boolean(effectiveEditing && toolbar?.isDirty)
 
   const {
     quickRun,
@@ -58,13 +64,43 @@ export default function RecipeOverrideEditPage() {
     triggerRunMutation,
   } = useAutopkgQuickRun()
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed to the route param to reset local editor state
   useEffect(() => {
     setToolbar(null)
+    setEditing(false)
+    setEditorKey((k) => k + 1)
   }, [id])
 
   useEffect(() => {
-    if (!canEditRecipes) setToolbar(null)
+    if (!canEditRecipes) {
+      setEditing(false)
+      setToolbar(null)
+    }
   }, [canEditRecipes])
+
+  const handleCancelEdit = useCallback(() => {
+    setEditing(false)
+    setEditorKey((k) => k + 1)
+  }, [])
+
+  const registerDelete = useCallback((fn: (() => void) | null) => {
+    // Store a function in state — pass an updater so React does not invoke it.
+    setOpenDelete(() => fn)
+  }, [])
+
+  const confirmLoseChanges = useCallback(() => {
+    if (!hasUnsavedChanges) return true
+    return window.confirm('You have unsaved changes. Discard them?')
+  }, [hasUnsavedChanges])
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return
+      e.preventDefault()
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [hasUnsavedChanges])
 
   const {
     data: recipe,
@@ -113,7 +149,16 @@ export default function RecipeOverrideEditPage() {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/autopkg/recipes">Recipes</BreadcrumbLink>
+            <BreadcrumbLink asChild>
+              <Link
+                to="/autopkg/recipes"
+                onClick={(e) => {
+                  if (!confirmLoseChanges()) e.preventDefault()
+                }}
+              >
+                Recipes
+              </Link>
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
@@ -164,7 +209,7 @@ export default function RecipeOverrideEditPage() {
               Run
             </Button>
           ) : null}
-          {canEditRecipes && toolbar ? (
+          {canEditRecipes && effectiveEditing && toolbar ? (
             <>
               <Button
                 size="sm"
@@ -176,34 +221,65 @@ export default function RecipeOverrideEditPage() {
                 ) : (
                   <Save className="h-4 w-4" aria-hidden />
                 )}
-                {toolbar.isSaving ? 'Saving...' : 'Save'}
+                {toolbar.isSaving ? 'Saving…' : 'Save'}
               </Button>
               <Button
-                variant="destructive"
-                size="icon"
-                className="shrink-0"
-                aria-label={`Delete override ${recipe.name}`}
-                disabled={toolbar.isDeleting}
-                onClick={toolbar.deleteRecipe}
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (!confirmLoseChanges()) return
+                  handleCancelEdit()
+                }}
+                disabled={toolbar.isSaving}
+              >
+                <X className="h-4 w-4" />
+                Cancel
+              </Button>
+            </>
+          ) : canEditRecipes ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditing(true)}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={!openDelete}
+                onClick={() => openDelete?.()}
               >
                 <Trash2 className="h-4 w-4" />
+                Delete
               </Button>
             </>
           ) : null}
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/autopkg/recipes">
+          {/* <Button variant="outline" size="sm" asChild>
+            <Link
+              to="/autopkg/recipes"
+              onClick={(e) => {
+                if (!confirmLoseChanges()) e.preventDefault()
+              }}
+            >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to list
             </Link>
-          </Button>
+          </Button> */}
         </div>
       </div>
 
       <RecipeOverrideEditor
+        key={editorKey}
         recipe={recipe}
-        readOnly={!canEditRecipes}
+        readOnly={!effectiveEditing}
         onDeleted={() => navigate('/autopkg/recipes')}
-        onToolbarApiChange={canEditRecipes ? setToolbar : undefined}
+        onSaved={() => setEditing(false)}
+        onToolbarApiChange={effectiveEditing ? setToolbar : undefined}
+        onRegisterDelete={canEditRecipes ? registerDelete : undefined}
       />
 
       <QuickRunDialog

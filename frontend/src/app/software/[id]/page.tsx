@@ -67,6 +67,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -93,6 +94,7 @@ import { looseVersionSortingFn } from '@/lib/loose-version'
 import { munkiAccents } from '@/lib/munki-accents'
 import { PAGE_KEYS } from '@/lib/page-keys'
 import { publicApiBaseUrl } from '@/lib/public-api-base'
+import { manifestRiskAlertClass } from '@/lib/shard-ui'
 import { cn } from '@/lib/utils'
 
 function softwareInstallReportStatusVariant(status: string) {
@@ -2711,6 +2713,21 @@ function ProductionRolloutCard({
       api.get<PkgInfoShardStatusRead>(`/pkginfo/${pkgId}/shard-status`),
   })
 
+  const [overrideEnabled, setOverrideEnabled] = useState(false)
+  const [overrideValue, setOverrideValue] = useState(25)
+
+  useEffect(() => {
+    if (!st) return
+    const hasOverride = st.shard_percent_override != null
+    setOverrideEnabled(hasOverride)
+    setOverrideValue(
+      st.shard_percent_override ??
+        st.shard_percent ??
+        st.scheduled_shard_percent ??
+        25,
+    )
+  }, [st])
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['pkginfo', pkgId] })
     void queryClient.invalidateQueries({
@@ -2744,8 +2761,23 @@ function ProductionRolloutCard({
     },
     onError: (e: Error) => toast.error(e.message),
   })
+  const overrideMut = useMutation({
+    mutationFn: (shard_percent: number | null) =>
+      api.put<PkgInfoShardStatusRead>(`/pkginfo/${pkgId}/shard/override`, {
+        shard_percent,
+      }),
+    onSuccess: () => {
+      toast.success('Shard override updated')
+      invalidate()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
 
-  const busy = startMut.isPending || pauseMut.isPending || completeMut.isPending
+  const busy =
+    startMut.isPending ||
+    pauseMut.isPending ||
+    completeMut.isPending ||
+    overrideMut.isPending
   const canStart =
     st?.deployment_status === 'pending_rollout' ||
     st?.shard_rollout_status === 'pending_approval'
@@ -2754,6 +2786,13 @@ function ProductionRolloutCard({
     st?.deployment_status === 'sharding' ||
     st?.deployment_status === 'paused' ||
     st?.deployment_status === 'pending_rollout'
+
+  const showShardOverride =
+    canEdit &&
+    st &&
+    st.deployment_status !== 'not_in_production' &&
+    st.deployment_status !== 'pending_rollout' &&
+    st.deployment_status !== 'fully_deployed'
 
   return (
     <Card>
@@ -2799,12 +2838,12 @@ function ProductionRolloutCard({
         ) : st ? (
           <>
             {st.manifest_warning ? (
-              <div className="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-2 text-sm text-red-800">
+              <div className={manifestRiskAlertClass}>
                 Net-new title referenced in manifests while not fully deployed.
                 High-shard devices may report missing catalog items until
                 rollout completes.
                 {st.manifest_names.length ? (
-                  <span className="mt-1 block text-xs">
+                  <span className="mt-1 block text-xs opacity-90">
                     Manifests: {st.manifest_names.join(', ')}
                   </span>
                 ) : null}
@@ -2839,6 +2878,70 @@ function ProductionRolloutCard({
               <p className="font-mono text-xs text-muted-foreground">
                 {st.installable_condition}
               </p>
+            ) : null}
+            {showShardOverride ? (
+              <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id={`shard-override-${pkgId}`}
+                      checked={overrideEnabled}
+                      disabled={busy}
+                      onCheckedChange={(enabled) => {
+                        setOverrideEnabled(enabled)
+                        if (!enabled) {
+                          overrideMut.mutate(null)
+                        } else {
+                          overrideMut.mutate(overrideValue)
+                        }
+                      }}
+                    />
+                    <Label
+                      htmlFor={`shard-override-${pkgId}`}
+                      className="font-normal"
+                    >
+                      Manual shard override
+                    </Label>
+                  </div>
+                  <span className="font-mono text-sm tabular-nums">
+                    {overrideEnabled
+                      ? `${overrideValue}%`
+                      : st.scheduled_shard_percent != null
+                        ? `${st.scheduled_shard_percent}% (auto)`
+                        : '—'}
+                  </span>
+                </div>
+                {overrideEnabled ? (
+                  <div className="space-y-2">
+                    <Slider
+                      min={1}
+                      max={100}
+                      step={1}
+                      value={[overrideValue]}
+                      disabled={busy}
+                      onValueChange={(v) => setOverrideValue(v[0] ?? 1)}
+                      onValueCommit={(v) => {
+                        const pct = v[0] ?? 1
+                        setOverrideValue(pct)
+                        overrideMut.mutate(pct)
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Sets{' '}
+                      <code className="text-xs">installable_condition</code> to{' '}
+                      <code className="text-xs">
+                        shard &lt;= {overrideValue}
+                      </code>
+                      . Automatic daily progression is paused while overridden.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Enable to pin a specific fleet percentage instead of the
+                    scheduled daily rollout.
+                  </p>
+                )}
+              </div>
             ) : null}
           </>
         ) : null}

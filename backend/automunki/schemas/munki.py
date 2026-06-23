@@ -263,6 +263,7 @@ class PkgInfoSummary(BaseModel):
     shard_percent: int | None = None
     is_first_production_deploy: bool = False
     in_manifest: bool = False
+    install_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -287,6 +288,8 @@ class PkgInfoShardStatusRead(BaseModel):
     deployment_status: str
     shard_rollout_status: str
     shard_percent: int | None
+    shard_percent_override: int | None = None
+    scheduled_shard_percent: int | None = None
     shard_started_at: datetime | None
     rollout_days: int
     current_day: int | None
@@ -297,6 +300,10 @@ class PkgInfoShardStatusRead(BaseModel):
     installable_condition: str | None
     production_shard_enabled: bool
     net_new_shard_policy: str
+
+
+class ShardPercentOverrideRequest(BaseModel):
+    shard_percent: int | None = Field(None, ge=0, le=100)
 
 
 class CatalogAssignment(BaseModel):

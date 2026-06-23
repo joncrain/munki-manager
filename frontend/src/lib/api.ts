@@ -252,6 +252,7 @@ export interface PkgInfoSummary {
   shard_percent?: number | null
   is_first_production_deploy?: boolean
   in_manifest?: boolean
+  install_count?: number
   created_at: string
   updated_at: string
 }
@@ -281,6 +282,8 @@ export interface PkgInfoShardStatusRead {
   deployment_status: DeploymentStatus
   shard_rollout_status: string
   shard_percent: number | null
+  shard_percent_override: number | null
+  scheduled_shard_percent: number | null
   shard_started_at: string | null
   rollout_days: number
   current_day: number | null
