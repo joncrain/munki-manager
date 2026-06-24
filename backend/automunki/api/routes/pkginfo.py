@@ -164,22 +164,53 @@ def _build_install_timeline_by_version(
     return versions, timeline_by_version
 
 
-async def _fetch_install_counts_by_name(
+def _install_report_count_key(name: str, version: str) -> tuple[str, str]:
+    return (name, version)
+
+
+def _install_counts_for_pkg(
+    pkg: PkgInfo,
+    install_counts: dict[tuple[str, str], int],
+    failed_counts: dict[tuple[str, str], int],
+) -> tuple[int, int]:
+    key = _install_report_count_key(pkg.name, pkg.version)
+    return install_counts.get(key, 0), failed_counts.get(key, 0)
+
+
+async def _fetch_install_report_counts_by_name_version(
     session: AsyncSession,
     names: list[str],
-) -> dict[str, int]:
-    """Installed-status install report rows grouped by Munki item name."""
+) -> tuple[dict[tuple[str, str], int], dict[tuple[str, str], int]]:
+    """Install report rows grouped by Munki item name and version."""
     if not names:
-        return {}
+        return {}, {}
     rows = (
         await session.execute(
-            select(ClientInstallReport.item_name, func.count())
+            select(
+                ClientInstallReport.item_name,
+                ClientInstallReport.item_version,
+                ClientInstallReport.status,
+                func.count(),
+            )
             .where(ClientInstallReport.item_name.in_(names))
-            .where(ClientInstallReport.status == "installed")
-            .group_by(ClientInstallReport.item_name)
+            .where(ClientInstallReport.status.in_(("installed", "failed")))
+            .group_by(
+                ClientInstallReport.item_name,
+                ClientInstallReport.item_version,
+                ClientInstallReport.status,
+            )
         )
     ).all()
-    return {name: int(cnt) for name, cnt in rows}
+    install_counts: dict[tuple[str, str], int] = {}
+    failed_counts: dict[tuple[str, str], int] = {}
+    for item_name, item_version, status, cnt in rows:
+        key = _install_report_count_key(item_name, item_version or "")
+        count = int(cnt)
+        if status == "installed":
+            install_counts[key] = count
+        elif status == "failed":
+            failed_counts[key] = count
+    return install_counts, failed_counts
 
 
 def _to_summary(
@@ -188,6 +219,7 @@ def _to_summary(
     is_latest: bool = False,
     deployment_extra: dict | None = None,
     install_count: int = 0,
+    failed_install_count: int = 0,
 ) -> dict:
     base = {
         "id": pkg.id,
@@ -206,6 +238,7 @@ def _to_summary(
         "pending_metadata": pkg.pending_metadata,
         "is_latest": is_latest,
         "install_count": install_count,
+        "failed_install_count": failed_install_count,
         "created_at": pkg.created_at,
         "updated_at": pkg.updated_at,
     }
@@ -352,14 +385,19 @@ async def list_pkginfo(
             if _matches_deployment_filter(deploy_extra[p.id]["deployment_status"], deployment_status)
         ]
         total = len(filtered)
-        install_counts = await _fetch_install_counts_by_name(session, list({p.name for p in filtered}))
+        install_counts, failed_counts = await _fetch_install_report_counts_by_name_version(
+            session, list({p.name for p in filtered})
+        )
         if sort_by == "version":
             reverse = sort_order != "asc"
             filtered.sort(key=lambda p: loose_version_key(p.version), reverse=reverse)
         elif sort_by == "install_count":
             reverse = sort_order != "asc"
             filtered.sort(
-                key=lambda p: (install_counts.get(p.name, 0), p.name or ""),
+                key=lambda p: (
+                    *_install_counts_for_pkg(p, install_counts, failed_counts),
+                    p.name or "",
+                ),
                 reverse=reverse,
             )
         else:
@@ -373,17 +411,20 @@ async def list_pkginfo(
             )
         page_pkgs = filtered[(page - 1) * page_size : page * page_size]
         page_deploy = {p.id: deploy_extra[p.id] for p in page_pkgs}
-        items = [
-            PkgInfoSummary(
-                **_to_summary(
-                    p,
-                    is_latest=is_latest_version(p.name, p.version, latest_by_name),
-                    deployment_extra=page_deploy[p.id],
-                    install_count=install_counts.get(p.name, 0),
+        items = []
+        for p in page_pkgs:
+            installed, failed = _install_counts_for_pkg(p, install_counts, failed_counts)
+            items.append(
+                PkgInfoSummary(
+                    **_to_summary(
+                        p,
+                        is_latest=is_latest_version(p.name, p.version, latest_by_name),
+                        deployment_extra=page_deploy[p.id],
+                        install_count=installed,
+                        failed_install_count=failed,
+                    )
                 )
             )
-            for p in page_pkgs
-        ]
         return PaginatedResponse(
             items=items,
             total=total,
@@ -415,31 +456,41 @@ async def list_pkginfo(
             pkg_by_id = {p.id: p for p in page_result.scalars().unique().all()}
             page_pkgs = [pkg_by_id[pid] for pid in page_ids if pid in pkg_by_id]
             deploy_extra = await _deployment_extra_for_pkginfos(session, page_pkgs)
-            install_counts = await _fetch_install_counts_by_name(session, list({p.name for p in page_pkgs}))
-            items = [
-                PkgInfoSummary(
-                    **_to_summary(
-                        pkg_by_id[pkg_id],
-                        is_latest=is_latest_version(
-                            pkg_by_id[pkg_id].name,
-                            pkg_by_id[pkg_id].version,
-                            latest_by_name,
-                        ),
-                        deployment_extra=deploy_extra.get(pkg_id),
-                        install_count=install_counts.get(pkg_by_id[pkg_id].name, 0),
+            install_counts, failed_counts = await _fetch_install_report_counts_by_name_version(
+                session, list({p.name for p in page_pkgs})
+            )
+            items = []
+            for pkg_id in page_ids:
+                if pkg_id not in pkg_by_id:
+                    continue
+                pkg = pkg_by_id[pkg_id]
+                installed, failed = _install_counts_for_pkg(pkg, install_counts, failed_counts)
+                items.append(
+                    PkgInfoSummary(
+                        **_to_summary(
+                            pkg,
+                            is_latest=is_latest_version(pkg.name, pkg.version, latest_by_name),
+                            deployment_extra=deploy_extra.get(pkg_id),
+                            install_count=installed,
+                            failed_install_count=failed,
+                        )
                     )
                 )
-                for pkg_id in page_ids
-                if pkg_id in pkg_by_id
-            ]
     elif sort_by == "install_count":
-        id_name_result = await session.execute(query.with_only_columns(PkgInfo.id, PkgInfo.name))
-        id_name_rows = id_name_result.all()
-        install_counts = await _fetch_install_counts_by_name(session, list({row.name for row in id_name_rows}))
+        id_name_version_result = await session.execute(
+            query.with_only_columns(PkgInfo.id, PkgInfo.name, PkgInfo.version)
+        )
+        id_name_version_rows = id_name_version_result.all()
+        install_counts, failed_counts = await _fetch_install_report_counts_by_name_version(
+            session, list({row.name for row in id_name_version_rows})
+        )
         reverse = sort_order != "asc"
         sorted_rows = sorted(
-            id_name_rows,
-            key=lambda row: (install_counts.get(row.name, 0), row.name or ""),
+            id_name_version_rows,
+            key=lambda row: (
+                install_counts.get(_install_report_count_key(row.name, row.version), 0),
+                row.name or "",
+            ),
             reverse=reverse,
         )
         page_rows = sorted_rows[(page - 1) * page_size : page * page_size]
@@ -453,22 +504,23 @@ async def list_pkginfo(
             pkg_by_id = {p.id: p for p in page_result.scalars().unique().all()}
             page_pkgs = [pkg_by_id[pid] for pid in page_ids if pid in pkg_by_id]
             deploy_extra = await _deployment_extra_for_pkginfos(session, page_pkgs)
-            items = [
-                PkgInfoSummary(
-                    **_to_summary(
-                        pkg_by_id[pkg_id],
-                        is_latest=is_latest_version(
-                            pkg_by_id[pkg_id].name,
-                            pkg_by_id[pkg_id].version,
-                            latest_by_name,
-                        ),
-                        deployment_extra=deploy_extra.get(pkg_id),
-                        install_count=install_counts.get(pkg_by_id[pkg_id].name, 0),
+            items = []
+            for pkg_id in page_ids:
+                if pkg_id not in pkg_by_id:
+                    continue
+                pkg = pkg_by_id[pkg_id]
+                installed, failed = _install_counts_for_pkg(pkg, install_counts, failed_counts)
+                items.append(
+                    PkgInfoSummary(
+                        **_to_summary(
+                            pkg,
+                            is_latest=is_latest_version(pkg.name, pkg.version, latest_by_name),
+                            deployment_extra=deploy_extra.get(pkg_id),
+                            install_count=installed,
+                            failed_install_count=failed,
+                        )
                     )
                 )
-                for pkg_id in page_ids
-                if pkg_id in pkg_by_id
-            ]
     else:
         sort_col = getattr(PkgInfo, sort_by, PkgInfo.name)
         query = query.order_by(sort_col.asc() if sort_order == "asc" else sort_col.desc())
@@ -478,18 +530,23 @@ async def list_pkginfo(
         result = await session.execute(query)
         page_pkgs = list(result.scalars().unique().all())
         deploy_extra = await _deployment_extra_for_pkginfos(session, page_pkgs)
-        install_counts = await _fetch_install_counts_by_name(session, list({p.name for p in page_pkgs}))
-        items = [
-            PkgInfoSummary(
-                **_to_summary(
-                    p,
-                    is_latest=is_latest_version(p.name, p.version, latest_by_name),
-                    deployment_extra=deploy_extra.get(p.id),
-                    install_count=install_counts.get(p.name, 0),
+        install_counts, failed_counts = await _fetch_install_report_counts_by_name_version(
+            session, list({p.name for p in page_pkgs})
+        )
+        items = []
+        for p in page_pkgs:
+            installed, failed = _install_counts_for_pkg(p, install_counts, failed_counts)
+            items.append(
+                PkgInfoSummary(
+                    **_to_summary(
+                        p,
+                        is_latest=is_latest_version(p.name, p.version, latest_by_name),
+                        deployment_extra=deploy_extra.get(p.id),
+                        install_count=installed,
+                        failed_install_count=failed,
+                    )
                 )
             )
-            for p in page_pkgs
-        ]
 
     return PaginatedResponse(
         items=items,

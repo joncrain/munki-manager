@@ -5,7 +5,7 @@ import type {
   VisibilityState,
 } from '@tanstack/react-table'
 import { useAtom } from 'jotai'
-import { Package, Search, Tags, Trash2, Upload, X } from 'lucide-react'
+import { Package, Search, Tags, Trash2, Upload } from 'lucide-react'
 import { useEffect, useId, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -13,6 +13,7 @@ import { useAuth } from '@/components/auth-provider'
 import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
 import { DeploymentStatusBadge } from '@/components/deployment-status-badge'
 import { VersionWithLatestBadge } from '@/components/latest-version-badge'
+import { PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
 import { SoftwareIcon } from '@/components/software-icon'
 import { SoftwareUploadDialog } from '@/components/software-upload-dialog'
@@ -108,6 +109,23 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
         {row.original.install_count ?? 0}
       </span>
     ),
+  },
+  {
+    accessorKey: 'failed_install_count',
+    header: 'Failed',
+    cell: ({ row }) => {
+      const count = row.original.failed_install_count ?? 0
+      return (
+        <span
+          className={cn(
+            'tabular-nums text-sm',
+            count > 0 && 'font-medium text-destructive',
+          )}
+        >
+          {count}
+        </span>
+      )
+    },
   },
   {
     accessorKey: 'developer',
@@ -208,6 +226,7 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   version: true,
   category: true,
   install_count: true,
+  failed_install_count: true,
   developer: false,
   catalog_names: true,
   deployment_status: true,
@@ -380,6 +399,12 @@ export default function SoftwarePage() {
   })
 
   const hasFilters = search || category || catalog || deploymentStatus
+  const activeFilterCount = [
+    search,
+    category,
+    catalog,
+    deploymentStatus,
+  ].filter(Boolean).length
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
@@ -403,145 +428,132 @@ export default function SoftwarePage() {
         catalogs={catalogs ?? []}
       />
 
-      <div className="flex w-full flex-wrap items-center gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <div className="relative max-w-sm flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search software..."
-              value={search}
-              onChange={(e) => {
-                setListState((p) => ({
-                  ...p,
-                  search: e.target.value,
-                  page: 1,
-                }))
-              }}
-              className="pl-9"
-            />
-          </div>
-
-          <Select
-            value={category || '_all'}
-            onValueChange={(v) => {
-              setListState((p) => ({
-                ...p,
-                category: v === '_all' ? '' : v,
-                page: 1,
-              }))
-            }}
-          >
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Categories</SelectItem>
-              {(categories ?? []).map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={catalog || '_all'}
-            onValueChange={(v) => {
-              setListState((p) => ({
-                ...p,
-                catalog: v === '_all' ? '' : v,
-                page: 1,
-              }))
-            }}
-          >
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Catalog" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Catalogs</SelectItem>
-              {catalogs?.map((c) => (
-                <SelectItem key={c.id} value={c.name}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={deploymentStatus || '__all__'}
-            onValueChange={(v) => {
-              setListState((p) => ({
-                ...p,
-                deploymentStatus: v === '__all__' ? '' : v,
-                page: 1,
-              }))
-            }}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Deployment" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All deployments</SelectItem>
-              <SelectItem value="fully_deployed">Fully deployed</SelectItem>
-              <SelectItem value="sharding">Sharding</SelectItem>
-              <SelectItem value="pending_rollout">Awaiting rollout</SelectItem>
-              <SelectItem value="paused">Paused</SelectItem>
-              <SelectItem value="not_in_production">
-                Not in production
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Clear filters"
-              onClick={() => {
-                setListState((p) => ({
-                  ...p,
-                  search: '',
-                  category: '',
-                  catalog: '',
-                  deploymentStatus: '',
-                  page: 1,
-                }))
-              }}
-            >
-              <X className="h-4 w-4" />
-              Clear
-            </Button>
-          )}
-
-          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
-            <Switch
-              id="software-latest-only"
-              checked={latestOnly}
-              onCheckedChange={(checked) => {
-                setListState((p) => ({
-                  ...p,
-                  latestOnly: checked,
-                  page: 1,
-                }))
-              }}
-            />
-            <Label
-              htmlFor="software-latest-only"
-              className="cursor-pointer text-sm font-normal"
-            >
-              Latest only
-            </Label>
-          </div>
-        </div>
-
-        <div className="ml-auto shrink-0">
+      <PageFilters
+        isFiltered={hasFilters}
+        activeFilterCount={activeFilterCount}
+        onClear={() => {
+          setListState((p) => ({
+            ...p,
+            search: '',
+            category: '',
+            catalog: '',
+            deploymentStatus: '',
+            page: 1,
+          }))
+        }}
+        trailing={
           <ColumnVisibilityMenu
             columns={columns}
             columnVisibility={columnVisibility}
             onColumnVisibilityChange={setColumnVisibility}
           />
+        }
+      >
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search software..."
+            value={search}
+            onChange={(e) => {
+              setListState((p) => ({
+                ...p,
+                search: e.target.value,
+                page: 1,
+              }))
+            }}
+            className="pl-9"
+          />
         </div>
-      </div>
+
+        <Select
+          value={category || '_all'}
+          onValueChange={(v) => {
+            setListState((p) => ({
+              ...p,
+              category: v === '_all' ? '' : v,
+              page: 1,
+            }))
+          }}
+        >
+          <SelectTrigger className="w-full md:w-[160px]">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">All Categories</SelectItem>
+            {(categories ?? []).map((c) => (
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={catalog || '_all'}
+          onValueChange={(v) => {
+            setListState((p) => ({
+              ...p,
+              catalog: v === '_all' ? '' : v,
+              page: 1,
+            }))
+          }}
+        >
+          <SelectTrigger className="w-full md:w-[160px]">
+            <SelectValue placeholder="Catalog" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">All Catalogs</SelectItem>
+            {catalogs?.map((c) => (
+              <SelectItem key={c.id} value={c.name}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={deploymentStatus || '__all__'}
+          onValueChange={(v) => {
+            setListState((p) => ({
+              ...p,
+              deploymentStatus: v === '__all__' ? '' : v,
+              page: 1,
+            }))
+          }}
+        >
+          <SelectTrigger className="w-full md:w-[180px]">
+            <SelectValue placeholder="Deployment" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All deployments</SelectItem>
+            <SelectItem value="fully_deployed">Fully deployed</SelectItem>
+            <SelectItem value="sharding">Sharding</SelectItem>
+            <SelectItem value="pending_rollout">Awaiting rollout</SelectItem>
+            <SelectItem value="paused">Paused</SelectItem>
+            <SelectItem value="not_in_production">Not in production</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
+          <Switch
+            id="software-latest-only"
+            checked={latestOnly}
+            onCheckedChange={(checked) => {
+              setListState((p) => ({
+                ...p,
+                latestOnly: checked,
+                page: 1,
+              }))
+            }}
+          />
+          <Label
+            htmlFor="software-latest-only"
+            className="cursor-pointer text-sm font-normal"
+          >
+            Latest only
+          </Label>
+        </div>
+      </PageFilters>
 
       {selectedIds.length > 0 && (
         <div

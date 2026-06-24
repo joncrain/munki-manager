@@ -264,6 +264,7 @@ class PkgInfoSummary(BaseModel):
     is_first_production_deploy: bool = False
     in_manifest: bool = False
     install_count: int = 0
+    failed_install_count: int = 0
     created_at: datetime
     updated_at: datetime
 

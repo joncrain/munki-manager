@@ -1,14 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ListChecks, X } from 'lucide-react'
+import { ListChecks } from 'lucide-react'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
 import { VersionWithLatestBadge } from '@/components/latest-version-badge'
+import { PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -198,7 +198,18 @@ export default function ReportingInstallsPage() {
         <PageHeading icon={ListChecks} accent="reporting" title="Installs" />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <PageFilters
+        isFiltered={hasFilters}
+        activeFilterCount={
+          [search.trim(), status.trim()].filter(Boolean).length
+        }
+        sheetDescription="Refine install reports."
+        onClear={() => {
+          setSearch(null)
+          setStatus(null)
+          setPage(1)
+        }}
+      >
         <Input
           placeholder="Search item, hostname, or serial…"
           value={search}
@@ -216,7 +227,7 @@ export default function ReportingInstallsPage() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full md:w-[180px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -228,22 +239,7 @@ export default function ReportingInstallsPage() {
             ))}
           </SelectContent>
         </Select>
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Clear filters"
-            onClick={() => {
-              setSearch(null)
-              setStatus(null)
-              setPage(1)
-            }}
-          >
-            <X className="h-4 w-4" />
-            Clear
-          </Button>
-        )}
-      </div>
+      </PageFilters>
 
       <div className="min-h-0 flex-1">
         <DataTable

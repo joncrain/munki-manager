@@ -17,13 +17,13 @@ import {
   ShieldCheck,
   ShieldQuestion,
   Trash2,
-  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
+import { PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
@@ -803,6 +803,9 @@ export default function RecipesPage() {
 
   const hasFilters =
     Boolean(search.trim()) || Boolean(enabled) || Boolean(trustStatus.trim())
+  const activeFilterCount = [search.trim(), enabled, trustStatus.trim()].filter(
+    Boolean,
+  ).length
 
   return (
     <div className="flex h-[calc(100vh-3rem)] min-w-0 w-full max-w-full flex-col gap-4">
@@ -906,99 +909,92 @@ export default function RecipesPage() {
         }
       />
 
-      <div className="flex w-full flex-wrap items-center gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <div className="relative max-w-sm flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search recipes..."
-              value={search}
-              onChange={(e) => {
-                setRowSelection({})
-                setListState((p) => ({
-                  ...p,
-                  search: e.target.value,
-                  page: 1,
-                }))
-              }}
-              className="pl-9"
-            />
-          </div>
-
-          <Select
-            value={enabled || '_all'}
-            onValueChange={(v) => {
-              setRowSelection({})
-              setListState((p) => ({
-                ...p,
-                enabled: v === '_all' ? '' : v,
-                page: 1,
-              }))
-            }}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Statuses</SelectItem>
-              <SelectItem value="true">Enabled</SelectItem>
-              <SelectItem value="false">Disabled</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={trustStatus.trim() || '_all'}
-            onValueChange={(v) => {
-              setRowSelection({})
-              setListState((p) => ({
-                ...p,
-                trustStatus: v === '_all' ? '' : v,
-                page: 1,
-              }))
-            }}
-          >
-            <SelectTrigger className="w-[160px]" aria-label="Filter by trust">
-              <SelectValue placeholder="Trust" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all">All Trust</SelectItem>
-              <SelectItem value="verified">Verified</SelectItem>
-              <SelectItem value="failed">Failed</SelectItem>
-              <SelectItem value="pending_approval">Pending</SelectItem>
-              <SelectItem value="unknown">Unknown</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Clear filters"
-              onClick={() => {
-                setRowSelection({})
-                setListState((p) => ({
-                  ...p,
-                  search: '',
-                  enabled: '',
-                  trustStatus: '',
-                  page: 1,
-                }))
-              }}
-            >
-              <X className="h-4 w-4" />
-              Clear
-            </Button>
-          )}
-        </div>
-
-        <div className="ml-auto shrink-0">
+      <PageFilters
+        isFiltered={hasFilters}
+        activeFilterCount={activeFilterCount}
+        sheetDescription="Refine the recipe list."
+        onClear={() => {
+          setRowSelection({})
+          setListState((p) => ({
+            ...p,
+            search: '',
+            enabled: '',
+            trustStatus: '',
+            page: 1,
+          }))
+        }}
+        trailing={
           <ColumnVisibilityMenu
             columns={columns}
             columnVisibility={columnVisibility}
             onColumnVisibilityChange={setColumnVisibility}
           />
+        }
+      >
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search recipes..."
+            value={search}
+            onChange={(e) => {
+              setRowSelection({})
+              setListState((p) => ({
+                ...p,
+                search: e.target.value,
+                page: 1,
+              }))
+            }}
+            className="pl-9"
+          />
         </div>
-      </div>
+
+        <Select
+          value={enabled || '_all'}
+          onValueChange={(v) => {
+            setRowSelection({})
+            setListState((p) => ({
+              ...p,
+              enabled: v === '_all' ? '' : v,
+              page: 1,
+            }))
+          }}
+        >
+          <SelectTrigger className="w-full md:w-[140px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">All Statuses</SelectItem>
+            <SelectItem value="true">Enabled</SelectItem>
+            <SelectItem value="false">Disabled</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={trustStatus.trim() || '_all'}
+          onValueChange={(v) => {
+            setRowSelection({})
+            setListState((p) => ({
+              ...p,
+              trustStatus: v === '_all' ? '' : v,
+              page: 1,
+            }))
+          }}
+        >
+          <SelectTrigger
+            className="w-full md:w-[160px]"
+            aria-label="Filter by trust"
+          >
+            <SelectValue placeholder="Trust" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">All Trust</SelectItem>
+            <SelectItem value="verified">Verified</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="pending_approval">Pending</SelectItem>
+            <SelectItem value="unknown">Unknown</SelectItem>
+          </SelectContent>
+        </Select>
+      </PageFilters>
 
       <div className="min-h-0 min-w-0 flex-1">
         <DataTable

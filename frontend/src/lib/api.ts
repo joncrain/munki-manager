@@ -253,6 +253,7 @@ export interface PkgInfoSummary {
   is_first_production_deploy?: boolean
   in_manifest?: boolean
   install_count?: number
+  failed_install_count?: number
   created_at: string
   updated_at: string
 }

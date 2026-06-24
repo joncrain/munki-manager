@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { ClipboardList, Search, X } from 'lucide-react'
+import { ClipboardList, Search } from 'lucide-react'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
 import { useState } from 'react'
 import { AuditDetailDialog } from '@/components/audit/audit-detail-dialog'
 import { auditLogAdminColumns } from '@/components/audit/audit-log-columns'
 import { DataTable } from '@/components/data-table'
+import { PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -98,12 +98,25 @@ export default function AuditPage() {
   })
 
   const hasFilters = action || entityType || search
+  const activeFilterCount = [action, entityType, search.trim()].filter(
+    Boolean,
+  ).length
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <PageHeading icon={ClipboardList} accent="audit" title="Audit Log" />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <PageFilters
+        isFiltered={hasFilters}
+        activeFilterCount={activeFilterCount}
+        sheetDescription="Refine audit log entries."
+        onClear={() => {
+          setAction(null)
+          setEntityType(null)
+          setSearch(null)
+          setPage(1)
+        }}
+      >
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -124,7 +137,7 @@ export default function AuditPage() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-[140px]">
+          <SelectTrigger className="w-full md:w-[140px]">
             <SelectValue placeholder="Action" />
           </SelectTrigger>
           <SelectContent>
@@ -144,7 +157,7 @@ export default function AuditPage() {
             setPage(1)
           }}
         >
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-full md:w-[160px]">
             <SelectValue placeholder="Entity Type" />
           </SelectTrigger>
           <SelectContent>
@@ -156,24 +169,7 @@ export default function AuditPage() {
             ))}
           </SelectContent>
         </Select>
-
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Clear filters"
-            onClick={() => {
-              setAction(null)
-              setEntityType(null)
-              setSearch(null)
-              setPage(1)
-            }}
-          >
-            <X className="h-4 w-4" />
-            Clear
-          </Button>
-        )}
-      </div>
+      </PageFilters>
 
       <p className="text-xs text-muted-foreground">
         Click a row to view change details.

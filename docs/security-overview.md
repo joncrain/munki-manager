@@ -17,8 +17,9 @@ together with [`deployment.md`](./deployment.md) and
 
 - Every API endpoint is gated by either an authenticated user (JWT/OIDC),
   the `LOCAL_RUNNER_TOKEN` Bearer (for AutoPkg runners), or HTTP Basic on
-  `/repo/*` (for Munki clients). There is **no unauthenticated write path** in
-  the default config.
+  `/repo/*` (for Munki clients). AutoPkg ingest paths that used to be
+  unauthenticated now require the runner token; the main remaining
+  unauthenticated write is fleet check-in (`POST /api/v1/reports/checkin`).
 - Operator-supplied secrets (`SECRET_KEY`, `LOCAL_RUNNER_TOKEN`, Postgres
   password, optional GitHub PAT) are stored in Azure Key Vault and surfaced to
   Container Apps as Key Vault secret references — never as plain env vars in
@@ -98,53 +99,55 @@ The auth model is layered:
 4. The `LOCAL_RUNNER_TOKEN` Bearer is accepted on a small allowlist of
    AutoPkg-runner paths (constant-time compared with `hmac.compare_digest`).
 
-The single biggest application-layer concern is the **public allowlist** in
-`_is_public_path()` (`rbac_middleware.py:77-120`):
+#### AutoPkg runner endpoints — ✅ Mitigated by default
 
-```117:120:backend/automunki/core/rbac_middleware.py
-    if path.rstrip("/") == "/api/v1/autopkg/pkginfo/ingest" and method == "POST":
-        return True
-    if path.rstrip("/") == "/api/v1/autopkg/icons/ingest" and method == "POST":
-        return True
-```
+Five POST endpoints that AutoPkg runners call used to be on the public
+allowlist in `_is_public_path()` with no credential check. That allowed any
+internet caller to plant a `PkgInfo` row, overwrite icons, or mark runs
+complete. They now live in `_local_runner_authenticated_path()`
+(`rbac_middleware.py:57-87`) and require either:
 
-```112:116:backend/automunki/core/rbac_middleware.py
-    if path.startswith("/api/v1/autopkg/runs/") and (
-        "/results" in path or path.rstrip("/").endswith("/complete") or path.rstrip("/").endswith("/github-context")
-    ):
-        return True
-```
+- a `Authorization: Bearer` token matching `settings.local_runner_token`
+  (constant-time compared with `hmac.compare_digest`), or
+- a valid interactive user JWT with the right RBAC permissions.
 
-Combined, that means **five POST endpoints accept arbitrary input from
-unauthenticated callers on the public Container App URL**:
+Affected paths:
 
-- `POST /api/v1/autopkg/pkginfo/ingest` — creates/updates a `PkgInfo` row,
-  which then becomes part of catalogs and therefore part of every client's
-  install plan. The handler does not require a matching `recipe_identifier`;
-  a plist with `name`, `version`, and `installer_item_location` is enough
-  (`autopkg.py:2204` onwards).
-- `POST /api/v1/autopkg/icons/ingest` — overwrites a `software_icon` blob.
-- `POST /api/v1/autopkg/runs/{id}/results` — adds an `AutoPkgRunResult` to
-  any UUID (404 if unknown but otherwise unauthenticated).
-- `POST /api/v1/autopkg/runs/{id}/complete` — marks any run completed.
-- `POST /api/v1/autopkg/runs/{id}/github-context` — overwrites the GitHub
-  Actions URL associated with a run.
+- `POST /api/v1/autopkg/pkginfo/ingest`
+- `POST /api/v1/autopkg/icons/ingest`
+- `POST /api/v1/autopkg/runs/{id}/results`
+- `POST /api/v1/autopkg/runs/{id}/complete`
+- `POST /api/v1/autopkg/runs/{id}/github-context`
+- `POST /api/v1/autopkg/runs/{id}/pkgs` (binary upload)
+- plus runner read/claim paths (`metadata-cache`, `runs/config`,
+  `runs/claim-next-local`, `GET /runs/{id}`)
 
-The intent (per the comment in `rbac_middleware.py:67-73`) was that the
-`LOCAL_RUNNER_TOKEN` becomes the auth path and these public allowlist
-entries fall away once every runner is updated. That hasn't happened yet,
-so today they are still wide open.
+`_is_public_path()` documents the old behaviour in a comment
+(`rbac_middleware.py:127-134`) but no longer returns `True` for those
+routes. **Operators must set `LOCAL_RUNNER_TOKEN` in every deployed
+environment** — without it, unauthenticated callers get `401` and legitimate
+runners cannot ingest. The default demo/local `docker-compose` stack sets
+one via env.
 
-The `installer_item_location` ingestion for `POST /pkginfo/ingest` will
-override-resolve to a runner-uploaded URL (`autopkg.py:2245-2271`) when a
-matching `AutoPkgRunResult.imported_pkg_url` exists, but if no run-result
-exists the plist's URL/path is used unchanged. **An attacker can therefore
-inject a pkginfo whose `installer_item_location` is an attacker-controlled
-HTTPS URL.** Whether this leads to client-side execution depends on whether
-the chosen `name` / `version` lands the entry in a catalog any client
-manifest references — but the attacker controls those fields too.
+**Severity: was Critical; mitigated when `LOCAL_RUNNER_TOKEN` is configured.**
 
-**Severity: Critical.**
+#### Remaining unauthenticated write paths
+
+These POST endpoints are still reachable without a user JWT (by design or
+pending hardening):
+
+- `POST /api/v1/reports/checkin` — fleet agents report install state; any
+  caller can create/update `ClientMachine` rows and inject install-report
+  data. **Severity: High** for production; acceptable for a demo where
+  check-in volume is low and the instance is not sensitive.
+- `POST /api/v1/auth/register` — when `AUTH_REGISTRATION_OPEN=true` (the
+  default in `terraform/containerapps.tf`). See [§1.3](#13-open-registration).
+- `POST /api/v1/auth/demo` — when `AUTH_DEMO_ENABLED=true`; issues a
+  read-only Viewer JWT. Fine for demos; disable on private admin instances.
+- `POST /api/v1/autopkg/schedules/run-due` and
+  `POST /api/v1/autopkg/promotions/run-due` — allowed through middleware;
+  handlers require `X-Schedule-Secret` (503 if unset).
+- `POST /api/v1/enroll/profile` — token-gated MDM profile download.
 
 ### 1.3 Open registration
 
@@ -197,7 +200,7 @@ lockout, and no audit-trigger on repeated failures. **Severity: Medium.**
 There is **no application-layer rate limiting** anywhere — no `slowapi`,
 no per-IP throttle, no per-user quota. The only rate-limit-aware code is
 client code that consumes the GitHub API. **Severity: Medium** (impacts
-auth brute force, the public `pkginfo/ingest`, and the schedule webhook).
+auth brute force, unauthenticated fleet check-in, and the schedule webhook).
 
 ### 1.8 `/repo` Basic Auth
 
@@ -491,8 +494,9 @@ The backend's ingress is `external_enabled = true` (with the comment
 `containerapps.tf:120-133` acknowledging this is a workaround). So the
 backend FQDN is reachable directly from the internet, not just through the
 frontend nginx. The only protection is `RBACMiddleware`. That's fine for
-authenticated routes, but combined with the unauthenticated AutoPkg
-endpoints (§1.2) it means the public AutoPkg ingest is two URLs not one.
+authenticated routes. AutoPkg runner ingest (§1.2) is no longer
+unauthenticated; the main remaining unauthenticated write on the backend
+FQDN is fleet check-in (§1.2b).
 
 The fix the comment suggests — `ip_security_restriction` limited to the
 Container Apps environment static IP — is straightforward but not yet
@@ -572,7 +576,8 @@ commit. **Severity: Low.**
 
 | #     | Area    | Finding                                                         | Severity |
 | ----- | ------- | --------------------------------------------------------------- | -------- |
-| 1.2   | App     | Public AutoPkg ingest endpoints (pkginfo/icons/results/complete) | Critical |
+| 1.2   | App     | AutoPkg ingest endpoints (pkginfo/icons/results/complete) — runner token required | ✅ Mitigated |
+| 1.2b  | App     | Unauthenticated fleet check-in (`POST /reports/checkin`)        | High     |
 | 1.3   | App     | Open registration on internet-facing app                        | High     |
 | 1.4   | App     | OIDC nonce not validated                                        | Medium   |
 | 1.4   | App     | OIDC issues JWT via URL query string                            | Medium   |
@@ -604,13 +609,11 @@ commit. **Severity: Low.**
 
 *High when combined with 2.3.2; Medium alone.
 
-The **two findings that demand attention now** are:
+The **two findings that demand attention before a production deployment** are:
 
-- **1.2 — Public AutoPkg ingest.** This lets any internet attacker plant a
-  `PkgInfo` row whose `installer_item_location` they control. With a
-  carefully chosen `name` matching a real catalog item, this becomes a
-  software-supply-chain vector against every Munki client that subscribes
-  to the affected catalog. Fix immediately.
+- **1.2b — Unauthenticated fleet check-in.** Any caller can inject install
+  report data. Acceptable for a demo; add a shared secret or network
+  restriction before exposing a sensitive fleet.
 - **2.3.1 + 2.3.2 + 2.3.3 — the storage account triangle.** Public reads
   on the package container are a license-compliance / inventory-disclosure
   problem you may already be aware of, but the bigger blast radius is the

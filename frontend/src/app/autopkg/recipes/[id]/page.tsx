@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2, Pencil, Play, Save, Trash2, X } from 'lucide-react'
+import { Loader2, Pencil, Play, Save, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '@/components/auth-provider'
@@ -257,17 +257,6 @@ export default function RecipeOverrideEditPage() {
               </Button>
             </>
           ) : null}
-          {/* <Button variant="outline" size="sm" asChild>
-            <Link
-              to="/autopkg/recipes"
-              onClick={(e) => {
-                if (!confirmLoseChanges()) e.preventDefault()
-              }}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to list
-            </Link>
-          </Button> */}
         </div>
       </div>
 
