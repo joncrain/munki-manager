@@ -196,9 +196,6 @@ export default function ReportingInstallsPage() {
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <div>
         <PageHeading icon={ListChecks} accent="reporting" title="Installs" />
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Historical install and removal events from client check-ins.
-        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

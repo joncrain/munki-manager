@@ -150,64 +150,6 @@ export default function ReportingPage() {
         />
       </div>
 
-      {/* <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-l-4 border-l-gruvbox-blue/50 bg-gruvbox-blue/[0.06]">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Fleet size</CardTitle>
-            <MonitorSmartphone
-              className="size-4 text-gruvbox-blue"
-              aria-hidden
-            />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">
-              {complianceLoading ? '—' : (compliance?.total_machines ?? 0)}
-            </p>
-            <CardDescription>machines in database</CardDescription>
-          </CardContent>
-        </Card>
-        <Card className="border-l-4 border-l-gruvbox-green/50 bg-gruvbox-green/[0.06]">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active (7d)</CardTitle>
-            <Activity className="size-4 text-gruvbox-green" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">
-              {complianceLoading
-                ? '—'
-                : (compliance?.checked_in_last_7_days ?? 0)}
-            </p>
-            <CardDescription>checked in recently</CardDescription>
-          </CardContent>
-        </Card>
-        <Card className="border-l-4 border-l-gruvbox-orange/50 bg-gruvbox-orange/[0.07]">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Stale (30d+)</CardTitle>
-            <MoonStar className="size-4 text-gruvbox-orange" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">
-              {complianceLoading ? '—' : (compliance?.stale_over_30_days ?? 0)}
-            </p>
-            <CardDescription>no check-in in 30 days</CardDescription>
-          </CardContent>
-        </Card>
-        <Card className="border-l-4 border-l-gruvbox-purple/50 bg-gruvbox-purple/[0.06]">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">7-day reach</CardTitle>
-            <Percent className="size-4 text-gruvbox-purple" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">
-              {complianceLoading
-                ? '—'
-                : `${compliance?.compliance_percentage ?? 0}%`}
-            </p>
-            <CardDescription>of fleet reporting weekly</CardDescription>
-          </CardContent>
-        </Card>
-      </div> */}
-
       <div className="flex flex-wrap items-center gap-2">
         <Input
           placeholder="Search hostname or serial…"

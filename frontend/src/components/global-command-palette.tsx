@@ -28,6 +28,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useIsMobile } from '@/hooks/use-mobile'
 import {
   autopkgRecipesPageListAtom,
   defaultAutopkgRecipesPageListState,
@@ -110,6 +111,7 @@ function ShortcutHint({ shortcutKey }: { shortcutKey: string }) {
 export function GlobalCommandPalette() {
   const navigate = useNavigate()
   const sidebar = useSidebar()
+  const isMobile = useIsMobile()
   const { canRead, loading } = useAuth()
   const setSoftwareListState = useSetAtom(softwarePageListAtom)
   const setAutopkgListState = useSetAtom(autopkgRecipesPageListAtom)
@@ -368,45 +370,49 @@ export function GlobalCommandPalette() {
         title="Search"
         description="Search pages, software, AutoPkg recipes, devices, and audit log."
         shouldFilter={false}
-        contentClassName="top-[12vh] w-[min(920px,calc(100vw-2rem))] max-w-none translate-y-0"
-        commandClassName="[&_[cmdk-group-heading]]:px-4 [&_[cmdk-input-wrapper]]:px-4 [&_[cmdk-input]]:h-16 [&_[cmdk-input]]:text-base [&_[cmdk-item]]:px-4"
+        contentClassName="top-3 max-h-[calc(100dvh-1.5rem)] w-[min(720px,calc(100vw-1rem))] max-w-none translate-y-0 sm:top-[12vh] sm:max-h-none sm:max-w-none"
+        commandClassName="[&_[cmdk-group-heading]]:px-3 sm:[&_[cmdk-group-heading]]:px-4 [&_[cmdk-input-wrapper]]:px-3 sm:[&_[cmdk-input-wrapper]]:px-4 [&_[cmdk-input]]:h-12 [&_[cmdk-input]]:text-sm sm:[&_[cmdk-input]]:h-16 sm:[&_[cmdk-input]]:text-base [&_[cmdk-item]]:px-3 sm:[&_[cmdk-item]]:px-4"
       >
         <CommandInput
           placeholder={
             activeScope === 'all'
-              ? 'Search pages or type a software, recipe, device, or audit query...'
+              ? isMobile
+                ? 'Search software, recipes, devices…'
+                : 'Search pages or type a software, recipe, device, or audit query...'
               : `Search ${scopeLabels[activeScope].toLowerCase()}...`
           }
           value={searchTerm}
           onValueChange={setSearchTerm}
         />
-        <div className="flex items-center gap-3 border-b px-4 py-2.5">
-          <span className="shrink-0 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
-            Scope
-          </span>
-          <div className="flex w-fit flex-wrap gap-1 rounded-md bg-muted/40 p-1">
-            {availableScopes.map((scope) => (
-              <button
-                key={scope}
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => setActiveScope(scope)}
-                className={cn(
-                  'rounded-sm px-2.5 py-1 text-xs transition-colors',
-                  activeScope === scope
-                    ? 'bg-background text-foreground shadow-xs'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {scopeLabels[scope]}
-              </button>
-            ))}
+        <div className="flex flex-col gap-2 border-b px-3 py-2 sm:flex-row sm:items-center sm:gap-3 sm:px-4 sm:py-2.5">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <span className="shrink-0 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
+              Scope
+            </span>
+            <div className="flex min-w-0 flex-1 flex-wrap gap-1 rounded-md bg-muted/40 p-1">
+              {availableScopes.map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setActiveScope(scope)}
+                  className={cn(
+                    'rounded-sm px-2 py-1 text-xs transition-colors sm:px-2.5',
+                    activeScope === scope
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {scopeLabels[scope]}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="ml-auto">
+          <div className="hidden shrink-0 sm:ml-auto sm:block">
             <ShortcutHint shortcutKey="." />
           </div>
         </div>
-        <CommandList className="min-h-[440px] max-h-[68vh]">
+        <CommandList className="min-h-[min(280px,45dvh)] max-h-[min(68vh,calc(100dvh-11rem))] sm:min-h-[440px] sm:max-h-[68vh]">
           {trimmedSearchTerm && (
             <CommandEmpty>
               {trimmedSearchTerm.length >= 2 && isFetchingSuggestions
@@ -416,7 +422,7 @@ export function GlobalCommandPalette() {
           )}
 
           {!trimmedSearchTerm && (
-            <div className="flex min-h-[360px] items-center justify-center px-6 text-center">
+            <div className="flex min-h-[min(240px,40dvh)] items-center justify-center px-4 py-6 text-center sm:min-h-[360px] sm:px-6">
               <div className="max-w-md space-y-3">
                 <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
                   <Search className="h-5 w-5" />
@@ -485,7 +491,9 @@ export function GlobalCommandPalette() {
                             .join(' - ')}
                         </span>
                       </div>
-                      <CommandShortcut>Software</CommandShortcut>
+                      <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                        Software
+                      </CommandShortcut>
                     </CommandItem>
                   ))}
 
@@ -517,7 +525,9 @@ export function GlobalCommandPalette() {
                             .join(' - ')}
                         </span>
                       </div>
-                      <CommandShortcut>AutoPkg</CommandShortcut>
+                      <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                        AutoPkg
+                      </CommandShortcut>
                     </CommandItem>
                   ))}
 
@@ -548,7 +558,9 @@ export function GlobalCommandPalette() {
                             .join(' - ')}
                         </span>
                       </div>
-                      <CommandShortcut>Device</CommandShortcut>
+                      <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                        Device
+                      </CommandShortcut>
                     </CommandItem>
                   ))}
               </CommandGroup>
@@ -594,7 +606,9 @@ export function GlobalCommandPalette() {
                           .join(' - ')}
                       </span>
                     </div>
-                    <CommandShortcut>Audit</CommandShortcut>
+                    <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                      Audit
+                    </CommandShortcut>
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -621,7 +635,9 @@ export function GlobalCommandPalette() {
                         {item.group}
                       </span>
                     </div>
-                    <CommandShortcut>Page</CommandShortcut>
+                    <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                      Page
+                    </CommandShortcut>
                   </CommandItem>
                 )
               })}
@@ -638,10 +654,14 @@ export function GlobalCommandPalette() {
                     onSelect={() => runEntitySearch('software')}
                     disabled={pendingSearchType !== null}
                   >
-                    <Package className="h-4 w-4" />
-                    <span>Search all software for "{trimmedSearchTerm}"</span>
+                    <Package className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 line-clamp-2 sm:truncate">
+                      Search all software for "{trimmedSearchTerm}"
+                    </span>
                     {pendingSearchType === 'software' && (
-                      <CommandShortcut>Searching</CommandShortcut>
+                      <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                        Searching
+                      </CommandShortcut>
                     )}
                   </CommandItem>
                 )}
@@ -651,10 +671,14 @@ export function GlobalCommandPalette() {
                     onSelect={() => runEntitySearch('autopkg')}
                     disabled={pendingSearchType !== null}
                   >
-                    <BookOpen className="h-4 w-4" />
-                    <span>Search all recipes for "{trimmedSearchTerm}"</span>
+                    <BookOpen className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 line-clamp-2 sm:truncate">
+                      Search all recipes for "{trimmedSearchTerm}"
+                    </span>
                     {pendingSearchType === 'autopkg' && (
-                      <CommandShortcut>Searching</CommandShortcut>
+                      <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                        Searching
+                      </CommandShortcut>
                     )}
                   </CommandItem>
                 )}
@@ -664,10 +688,14 @@ export function GlobalCommandPalette() {
                     onSelect={() => runEntitySearch('device')}
                     disabled={pendingSearchType !== null}
                   >
-                    <MonitorSmartphone className="h-4 w-4" />
-                    <span>Search all devices for "{trimmedSearchTerm}"</span>
+                    <MonitorSmartphone className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 line-clamp-2 sm:truncate">
+                      Search all devices for "{trimmedSearchTerm}"
+                    </span>
                     {pendingSearchType === 'device' && (
-                      <CommandShortcut>Searching</CommandShortcut>
+                      <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                        Searching
+                      </CommandShortcut>
                     )}
                   </CommandItem>
                 )}
@@ -677,10 +705,14 @@ export function GlobalCommandPalette() {
                     onSelect={() => runEntitySearch('audit')}
                     disabled={pendingSearchType !== null}
                   >
-                    <ClipboardList className="h-4 w-4" />
-                    <span>Search audit log for "{trimmedSearchTerm}"</span>
+                    <ClipboardList className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 line-clamp-2 sm:truncate">
+                      Search audit log for "{trimmedSearchTerm}"
+                    </span>
                     {pendingSearchType === 'audit' && (
-                      <CommandShortcut>Searching</CommandShortcut>
+                      <CommandShortcut className="hidden sm:ml-auto sm:inline-flex">
+                        Searching
+                      </CommandShortcut>
                     )}
                   </CommandItem>
                 )}
