@@ -352,6 +352,8 @@ async def list_pkginfo(
     name: str | None = None,
     latest_only: bool = False,
     deployment_status: str | None = None,
+    promotion_eligible: bool = False,
+    rollout_queue: bool = False,
     sort_by: str = "name",
     sort_order: str = "asc",
 ):
@@ -380,6 +382,25 @@ async def list_pkginfo(
                 total_pages=0,
             )
         query = query.where(PkgInfo.id.in_(latest_ids))
+
+    queue_filter_ids: set[uuid.UUID] | None = None
+    if promotion_eligible:
+        queue_rows = await list_channel_promotion_queue_items(session, limit=200)
+        queue_filter_ids = {uuid.UUID(row["id"]) for row in queue_rows if row.get("leg_status") != "waiting"}
+    if rollout_queue:
+        shard_rows = await list_shard_queue_items(session, limit=200)
+        shard_ids = {uuid.UUID(row["id"]) for row in shard_rows}
+        queue_filter_ids = shard_ids if queue_filter_ids is None else queue_filter_ids & shard_ids
+    if queue_filter_ids is not None:
+        if not queue_filter_ids:
+            return PaginatedResponse(
+                items=[],
+                total=0,
+                page=page,
+                page_size=page_size,
+                total_pages=0,
+            )
+        query = query.where(PkgInfo.id.in_(queue_filter_ids))
 
     if deployment_status:
         result = await session.execute(query.options(selectinload(PkgInfo.catalogs)))

@@ -213,11 +213,30 @@ async def list_machines(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     search: str | None = None,
+    stale_days: int | None = Query(None, ge=1, le=365),
+    recent_days: int | None = Query(None, ge=1, le=365),
+    no_checkin: bool = False,
 ):
     query = select(ClientMachine)
     if search:
         query = query.where(
             ClientMachine.hostname.ilike(f"%{search}%") | ClientMachine.serial_number.ilike(f"%{search}%")
+        )
+    if no_checkin:
+        query = query.where(ClientMachine.last_checkin_at.is_(None))
+    elif recent_days is not None:
+        recent_cutoff = datetime.now(UTC) - timedelta(days=recent_days)
+        query = query.where(
+            ClientMachine.last_checkin_at.isnot(None),
+            ClientMachine.last_checkin_at >= recent_cutoff,
+        )
+    elif stale_days is not None:
+        stale_cutoff = datetime.now(UTC) - timedelta(days=stale_days)
+        query = query.where(
+            or_(
+                ClientMachine.last_checkin_at.is_(None),
+                ClientMachine.last_checkin_at < stale_cutoff,
+            )
         )
 
     count = (await session.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
@@ -410,6 +429,68 @@ async def list_install_reports(
     )
 
 
+@router.get("/failed-installs/summary")
+async def failed_installs_summary(
+    session: AsyncSession = Depends(get_session),
+    days: int = Query(7, ge=1, le=365, description="Rolling window in days"),
+    limit: int = Query(5, ge=1, le=50),
+):
+    """Top software titles with failed install reports in a rolling window."""
+    cutoff = datetime.now(UTC) - timedelta(days=days - 1)
+    event_at = func.coalesce(ClientInstallReport.install_date, ClientInstallReport.created_at)
+    rows = (
+        await session.execute(
+            select(
+                ClientInstallReport.item_name,
+                func.count(ClientInstallReport.id),
+                func.count(func.distinct(ClientInstallReport.machine_id)),
+                func.max(event_at),
+            )
+            .where(
+                event_at >= cutoff,
+                ClientInstallReport.status.in_(("failed", "removal_failed")),
+            )
+            .group_by(ClientInstallReport.item_name)
+            .order_by(func.count(ClientInstallReport.id).desc(), func.max(event_at).desc())
+            .limit(limit)
+        )
+    ).all()
+
+    items = []
+    for item_name, failure_count, machine_count, latest_at in rows:
+        latest_report = (
+            await session.execute(
+                select(ClientInstallReport.error_message, ClientMachine.hostname, ClientMachine.serial_number)
+                .join(ClientMachine, ClientInstallReport.machine_id == ClientMachine.id)
+                .where(
+                    ClientInstallReport.item_name == item_name,
+                    event_at >= cutoff,
+                    ClientInstallReport.status.in_(("failed", "removal_failed")),
+                )
+                .order_by(event_at.desc())
+                .limit(1)
+            )
+        ).first()
+        latest_error = None
+        latest_hostname = None
+        latest_serial = None
+        if latest_report:
+            latest_error, latest_hostname, latest_serial = latest_report
+        items.append(
+            {
+                "item_name": item_name,
+                "failure_count": int(failure_count),
+                "machine_count": int(machine_count),
+                "latest_at": latest_at.isoformat() if latest_at else None,
+                "latest_error": latest_error,
+                "latest_hostname": latest_hostname,
+                "latest_serial_number": latest_serial,
+            }
+        )
+
+    return {"days": days, "items": items}
+
+
 @router.get("/compliance")
 async def compliance_overview(
     session: AsyncSession = Depends(get_session),
@@ -438,6 +519,36 @@ async def compliance_overview(
         "checked_in_last_7_days": recent,
         "stale_over_30_days": stale,
         "compliance_percentage": round((recent / total * 100) if total > 0 else 0, 1),
+    }
+
+
+@router.get("/stale-machines")
+async def stale_machines_preview(
+    session: AsyncSession = Depends(get_session),
+    days: int = Query(30, ge=1, le=365, description="Stale threshold in days"),
+    limit: int = Query(5, ge=1, le=50),
+):
+    """Preview machines that have not checked in within the threshold."""
+    stale_cutoff = datetime.now(UTC) - timedelta(days=days)
+    result = await session.execute(
+        select(ClientMachine)
+        .where(ClientMachine.last_checkin_at < stale_cutoff)
+        .order_by(ClientMachine.last_checkin_at.asc())
+        .limit(limit)
+    )
+    machines = result.scalars().all()
+    return {
+        "days": days,
+        "items": [
+            {
+                "id": str(m.id),
+                "hostname": m.hostname,
+                "serial_number": m.serial_number,
+                "manifest_name": m.manifest_name,
+                "last_checkin_at": m.last_checkin_at.isoformat() if m.last_checkin_at else None,
+            }
+            for m in machines
+        ],
     }
 
 
@@ -491,8 +602,34 @@ async def fleet_activity_timeseries(
         )
     ).all()
 
+    install_installed_rows = (
+        await session.execute(
+            select(day_install, func.count(ClientInstallReport.id))
+            .where(
+                ClientInstallReport.created_at >= cutoff,
+                ClientInstallReport.status == "installed",
+            )
+            .group_by(day_install)
+            .order_by(day_install)
+        )
+    ).all()
+
+    install_failed_rows = (
+        await session.execute(
+            select(day_install, func.count(ClientInstallReport.id))
+            .where(
+                ClientInstallReport.created_at >= cutoff,
+                ClientInstallReport.status.in_(("failed", "removal_failed")),
+            )
+            .group_by(day_install)
+            .order_by(day_install)
+        )
+    ).all()
+
     return {
         "days": days,
         "checkins_by_day": _filled_daily_counts(checkin_rows, days),
         "install_rows_by_day": _filled_daily_counts(install_rows, days),
+        "install_installed_by_day": _filled_daily_counts(install_installed_rows, days),
+        "install_failed_by_day": _filled_daily_counts(install_failed_rows, days),
     }

@@ -1,13 +1,13 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { ListChecks } from 'lucide-react'
 import { parseAsString, useQueryState } from 'nuqs'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
+import { FilterBadge } from '@/components/filter-badge'
 import { VersionWithLatestBadge } from '@/components/latest-version-badge'
 import { PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -45,6 +45,10 @@ function makeColumns(
         { displayName: string; pkginfoId: string | null; isLatest: boolean }
       >
     | undefined,
+  filters: {
+    onStatusFilter: (status: string) => void
+    onItemFilter: (itemName: string) => void
+  },
 ): ColumnDef<ClientInstallReportListItem>[] {
   return [
     {
@@ -90,6 +94,9 @@ function makeColumns(
           <VersionWithLatestBadge
             version={item_version}
             isLatest={link?.isLatest}
+            onLatestFilter={
+              item_name ? () => filters.onItemFilter(item_name) : undefined
+            }
           />
         )
       },
@@ -97,11 +104,18 @@ function makeColumns(
     {
       accessorKey: 'status',
       header: 'Status',
-      cell: ({ row }) => (
-        <Badge variant={installReportStatusVariant(row.original.status)}>
-          {row.original.status}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const status = row.original.status
+        return (
+          <FilterBadge
+            variant={installReportStatusVariant(status)}
+            onFilter={() => filters.onStatusFilter(status)}
+            ariaLabel={`Filter to ${status} install reports`}
+          >
+            {status}
+          </FilterBadge>
+        )
+      },
     },
     {
       accessorKey: 'install_reason',
@@ -152,6 +166,10 @@ export default function ReportingInstallsPage() {
     'status',
     parseAsString.withDefault(''),
   )
+  const [itemName, setItemName] = useQueryState(
+    'item_name',
+    parseAsString.withDefault(''),
+  )
 
   const {
     page,
@@ -164,18 +182,80 @@ export default function ReportingInstallsPage() {
   } = usePaginatedListQuery<ClientInstallReportListItem>({
     queryKeyPrefix: ['reports-installs'],
     path: '/reports/installs',
-    filterKey: [search, status],
+    filterKey: [search, status, itemName],
     appendSearchParams: (params) => {
       if (search.trim()) params.set('search', search.trim())
       if (status.trim()) params.set('status', status.trim())
+      if (itemName.trim()) params.set('item_name', itemName.trim())
     },
   })
 
   const rows = data?.items ?? []
   const { data: pkginfoLinks } = usePkginfoLinksForInstallReports(rows)
-  const columns = useMemo(() => makeColumns(pkginfoLinks), [pkginfoLinks])
 
-  const hasFilters = Boolean(search.trim() || status.trim())
+  const onStatusFilter = useCallback(
+    (nextStatus: string) => {
+      void setStatus(nextStatus)
+      resetPage()
+    },
+    [resetPage, setStatus],
+  )
+
+  const onItemFilter = useCallback(
+    (nextItemName: string) => {
+      void setItemName(nextItemName)
+      resetPage()
+    },
+    [resetPage, setItemName],
+  )
+
+  const columns = useMemo(
+    () =>
+      makeColumns(pkginfoLinks, {
+        onStatusFilter,
+        onItemFilter,
+      }),
+    [onItemFilter, onStatusFilter, pkginfoLinks],
+  )
+
+  const hasSheetFilters = Boolean(status.trim() || itemName.trim())
+  const activeFilterCount = [status.trim(), itemName.trim()].filter(
+    Boolean,
+  ).length
+
+  const itemDisplayName = useMemo(() => {
+    if (!itemName.trim()) return ''
+    const match = rows.find((row) => row.item_name === itemName)
+    if (!match) return itemName
+    const link =
+      pkginfoLinks?.[installReportLinkKey(match.item_name, match.item_version)]
+    return link?.displayName ?? itemName
+  }, [itemName, pkginfoLinks, rows])
+
+  const activeFilters = useMemo(() => {
+    const filters = []
+    if (status.trim()) {
+      filters.push({
+        id: 'status',
+        label: `Status: ${status}`,
+        onRemove: () => {
+          void setStatus(null)
+          resetPage()
+        },
+      })
+    }
+    if (itemName.trim()) {
+      filters.push({
+        id: 'item_name',
+        label: `Item: ${itemDisplayName || itemName}`,
+        onRemove: () => {
+          void setItemName(null)
+          resetPage()
+        },
+      })
+    }
+    return filters
+  }, [itemDisplayName, itemName, resetPage, setItemName, setStatus, status])
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
@@ -184,27 +264,28 @@ export default function ReportingInstallsPage() {
       </div>
 
       <PageFilters
-        isFiltered={hasFilters}
-        activeFilterCount={
-          [search.trim(), status.trim()].filter(Boolean).length
-        }
+        isFiltered={hasSheetFilters}
+        activeFilterCount={activeFilterCount}
+        activeFilters={activeFilters}
         sheetDescription="Refine install reports."
         onClear={() => {
-          setSearch(null)
           setStatus(null)
+          setItemName(null)
           resetPage()
         }}
+        search={
+          <Input
+            placeholder="Search item, hostname, or serial…"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value || null)
+              resetPage()
+            }}
+            className="max-w-sm"
+            aria-label="Search installs"
+          />
+        }
       >
-        <Input
-          placeholder="Search item, hostname, or serial…"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value || null)
-            resetPage()
-          }}
-          className="max-w-sm"
-          aria-label="Search installs"
-        />
         <Select
           value={status || '_all'}
           onValueChange={(v) => {
@@ -212,7 +293,7 @@ export default function ReportingInstallsPage() {
             resetPage()
           }}
         >
-          <SelectTrigger className="w-full md:w-[180px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>

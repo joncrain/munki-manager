@@ -53,10 +53,12 @@ function AvatarCircleCell({
     />
   )
 
-  const body = (
-    <div className={shell} aria-label={imgFailed ? alt : undefined}>
+  const body = imgFailed ? (
+    <span className={shell} role="img" aria-label={alt}>
       {inner}
-    </div>
+    </span>
+  ) : (
+    <div className={shell}>{inner}</div>
   )
 
   if (!interactive) {
@@ -103,23 +105,15 @@ export const AvatarCircles = ({
           interactive={interactive}
         />
       ))}
-      {(numPeople ?? 0) > 0 &&
-        (interactive ? (
-          <a
-            className={cn(overflowShellClass, 'text-center')}
-            href=""
-            aria-label={`${numPeople} more`}
-          >
-            {overflowInner}
-          </a>
-        ) : (
-          <span
-            className={cn(overflowShellClass, 'shrink-0')}
-            aria-label={`${numPeople} more`}
-          >
-            {overflowInner}
-          </span>
-        ))}
+      {(numPeople ?? 0) > 0 ? (
+        <span
+          className={cn(overflowShellClass, 'shrink-0 text-center')}
+          role="status"
+          aria-label={`${numPeople} more`}
+        >
+          {overflowInner}
+        </span>
+      ) : null}
     </div>
   )
 }

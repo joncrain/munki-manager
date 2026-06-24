@@ -886,6 +886,36 @@ export interface FleetActivityTimeseries {
   days: number
   checkins_by_day: CheckinHistoryPoint[]
   install_rows_by_day: CheckinHistoryPoint[]
+  install_installed_by_day: CheckinHistoryPoint[]
+  install_failed_by_day: CheckinHistoryPoint[]
+}
+
+export interface FailedInstallSummaryItem {
+  item_name: string
+  failure_count: number
+  machine_count: number
+  latest_at: string | null
+  latest_error: string | null
+  latest_hostname: string | null
+  latest_serial_number: string | null
+}
+
+export interface FailedInstallSummary {
+  days: number
+  items: FailedInstallSummaryItem[]
+}
+
+export interface StaleMachinePreviewItem {
+  id: string
+  hostname: string | null
+  serial_number: string
+  manifest_name: string | null
+  last_checkin_at: string | null
+}
+
+export interface StaleMachinePreview {
+  days: number
+  items: StaleMachinePreviewItem[]
 }
 
 // ---------------------------------------------------------------------------

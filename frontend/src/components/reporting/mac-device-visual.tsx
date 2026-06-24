@@ -39,6 +39,7 @@ function LaptopSilhouette({ className }: { className?: string }) {
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
+      <title>Laptop silhouette</title>
       <rect
         x="28"
         y="18"
@@ -74,6 +75,7 @@ function ImacSilhouette({ className }: { className?: string }) {
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
+      <title>iMac silhouette</title>
       <rect
         x="36"
         y="16"
@@ -109,6 +111,7 @@ function MiniSilhouette({ className }: { className?: string }) {
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
+      <title>Mac mini silhouette</title>
       <rect
         x="52"
         y="44"
@@ -132,6 +135,7 @@ function TowerSilhouette({ className }: { className?: string }) {
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
+      <title>Mac Pro silhouette</title>
       <rect
         x="68"
         y="20"
@@ -209,6 +213,7 @@ function GenericSilhouette({ className }: { className?: string }) {
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
+      <title>Generic device silhouette</title>
       <rect
         x="40"
         y="28"

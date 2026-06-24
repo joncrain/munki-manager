@@ -288,27 +288,32 @@ export function SoftwareUploadDialog({
               {catalogs
                 .slice()
                 .sort((a, b) => a.name.localeCompare(b.name))
-                .map((cat) => (
-                  <label
-                    key={cat.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm hover:bg-muted/60"
-                  >
-                    <Checkbox
-                      checked={selectedCatalogs.includes(cat.name)}
-                      onCheckedChange={(v) => {
-                        const on = !!v
-                        setSelectedCatalogs((prev) =>
-                          on
-                            ? prev.includes(cat.name)
-                              ? prev
-                              : [...prev, cat.name]
-                            : prev.filter((n) => n !== cat.name),
-                        )
-                      }}
-                    />
-                    <span>{cat.name}</span>
-                  </label>
-                ))}
+                .map((cat) => {
+                  const catalogCheckboxId = `upload-catalog-${cat.id}`
+                  return (
+                    <label
+                      key={cat.id}
+                      htmlFor={catalogCheckboxId}
+                      className="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm hover:bg-muted/60"
+                    >
+                      <Checkbox
+                        id={catalogCheckboxId}
+                        checked={selectedCatalogs.includes(cat.name)}
+                        onCheckedChange={(v) => {
+                          const on = !!v
+                          setSelectedCatalogs((prev) =>
+                            on
+                              ? prev.includes(cat.name)
+                                ? prev
+                                : [...prev, cat.name]
+                              : prev.filter((n) => n !== cat.name),
+                          )
+                        }}
+                      />
+                      <span>{cat.name}</span>
+                    </label>
+                  )
+                })}
             </div>
             <p className="text-xs text-muted-foreground">
               Defaults to <code>testing</code> when none are selected.

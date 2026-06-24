@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Settings2,
+  X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -108,27 +110,70 @@ function selectColumnDef<TData>(): ColumnDef<TData, unknown> {
   }
 }
 
+function columnVisibilityDiffersFromDefault(
+  columnVisibility: VisibilityState,
+  defaultColumnVisibility: VisibilityState,
+  toggleableIds: string[],
+): boolean {
+  return toggleableIds.some((id) => {
+    const defaultVisible = defaultColumnVisibility[id] !== false
+    const currentVisible = columnVisibility[id] !== false
+    return defaultVisible !== currentVisible
+  })
+}
+
 export function ColumnVisibilityMenu<TData, TValue>({
   columns: columnDefs,
   columnVisibility,
   onColumnVisibilityChange,
+  defaultColumnVisibility,
 }: {
   columns: ColumnDef<TData, TValue>[]
   columnVisibility: VisibilityState
   onColumnVisibilityChange: OnChangeFn<VisibilityState>
+  defaultColumnVisibility?: VisibilityState
 }) {
   const toggleable = columnDefs.filter((c) => c.enableHiding !== false)
+  const toggleableIds = toggleable
+    .map((col) => columnDefId(col))
+    .filter((id) => id.length > 0)
 
   if (toggleable.length === 0) return null
 
+  const canReset =
+    defaultColumnVisibility != null &&
+    columnVisibilityDiffersFromDefault(
+      columnVisibility,
+      defaultColumnVisibility,
+      toggleableIds,
+    )
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Settings2 className="size-4" aria-hidden="true" />
-          Columns
-        </Button>
-      </DropdownMenuTrigger>
+      <div className="inline-flex h-8 items-stretch overflow-hidden rounded-md border bg-background shadow-xs">
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex h-full items-center gap-1.5 px-2.5 text-sm hover:bg-accent hover:text-accent-foreground"
+          >
+            <Settings2 className="size-4 shrink-0" aria-hidden="true" />
+            Columns
+          </button>
+        </DropdownMenuTrigger>
+        {canReset && defaultColumnVisibility ? (
+          <>
+            <span className="w-px self-stretch bg-border" aria-hidden="true" />
+            <button
+              type="button"
+              className="flex h-full items-center px-2 hover:bg-accent hover:text-accent-foreground"
+              aria-label="Reset columns to default"
+              onClick={() => onColumnVisibilityChange(defaultColumnVisibility)}
+            >
+              <X className="size-3.5" />
+            </button>
+          </>
+        ) : null}
+      </div>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -151,6 +196,16 @@ export function ColumnVisibilityMenu<TData, TValue>({
             </DropdownMenuCheckboxItem>
           )
         })}
+        {canReset ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => onColumnVisibilityChange(defaultColumnVisibility)}
+            >
+              Reset to default
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -261,6 +316,7 @@ export function DataTable<TData, TValue>({
             <ColumnVisibilityMenu
               columns={columns}
               columnVisibility={columnVisibility}
+              defaultColumnVisibility={defaultColumnVisibility}
               onColumnVisibilityChange={(updater) => {
                 if (onColumnVisibilityChangeProp) {
                   onColumnVisibilityChangeProp(updater)

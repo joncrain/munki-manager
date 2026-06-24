@@ -96,39 +96,64 @@ export default function AuditPage() {
     },
   })
 
-  const hasFilters = action || entityType || search
-  const activeFilterCount = [action, entityType, search.trim()].filter(
-    Boolean,
-  ).length
+  const hasSheetFilters = Boolean(action || entityType)
+  const activeFilterCount = [action, entityType].filter(Boolean).length
+  const activeFilters = [
+    ...(action
+      ? [
+          {
+            id: 'action',
+            label: `Action: ${action}`,
+            onRemove: () => {
+              void setAction(null)
+              resetPage()
+            },
+          },
+        ]
+      : []),
+    ...(entityType
+      ? [
+          {
+            id: 'entityType',
+            label: `Entity: ${entityType}`,
+            onRemove: () => {
+              void setEntityType(null)
+              resetPage()
+            },
+          },
+        ]
+      : []),
+  ]
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <PageHeading icon={ClipboardList} accent="audit" title="Audit Log" />
 
       <PageFilters
-        isFiltered={hasFilters}
+        isFiltered={hasSheetFilters}
         activeFilterCount={activeFilterCount}
+        activeFilters={activeFilters}
         sheetDescription="Refine audit log entries."
         onClear={() => {
           setAction(null)
           setEntityType(null)
-          setSearch(null)
           resetPage()
         }}
+        search={
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search entity or user..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                resetPage()
+              }}
+              className="pl-9"
+            />
+          </div>
+        }
       >
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search entity or user..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              resetPage()
-            }}
-            className="pl-9"
-          />
-        </div>
-
         <Select
           value={action || '_all'}
           onValueChange={(v) => {
@@ -136,7 +161,7 @@ export default function AuditPage() {
             resetPage()
           }}
         >
-          <SelectTrigger className="w-full md:w-[140px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder="Action" />
           </SelectTrigger>
           <SelectContent>
@@ -156,7 +181,7 @@ export default function AuditPage() {
             resetPage()
           }}
         >
-          <SelectTrigger className="w-full md:w-[160px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder="Entity Type" />
           </SelectTrigger>
           <SelectContent>

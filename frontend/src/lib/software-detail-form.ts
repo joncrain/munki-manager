@@ -4,6 +4,7 @@ import type {
   PkgInfoDetail,
   ReceiptItem,
 } from '@/lib/api'
+import { catalogNameSetsEqual } from '@/lib/catalog-names'
 
 export interface EditableFields {
   display_name: string
@@ -145,4 +146,38 @@ export function versionSpecificPayload(
     if (key in payload) out[key] = payload[key]
   }
   return out
+}
+
+export function buildChangeSnapshots(
+  original: EditableFields,
+  edited: EditableFields,
+  originalCatalogs: string[],
+  editedCatalogs: string[],
+): {
+  payload: Record<string, unknown>
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+  catalogChanged: boolean
+} | null {
+  const payload = buildUpdatePayload(original, edited)
+  const before: Record<string, unknown> = {}
+  const after: Record<string, unknown> = {}
+
+  for (const key of Object.keys(payload)) {
+    const field = key as keyof EditableFields
+    before[field] = original[field]
+    after[field] = edited[field]
+  }
+
+  const catalogChanged = !catalogNameSetsEqual(originalCatalogs, editedCatalogs)
+  if (catalogChanged) {
+    before.catalog_names = [...originalCatalogs].sort()
+    after.catalog_names = [...editedCatalogs].sort()
+  }
+
+  if (Object.keys(before).length === 0) {
+    return null
+  }
+
+  return { payload, before, after, catalogChanged }
 }

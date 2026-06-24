@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   XCircle,
 } from 'lucide-react'
+import { parseAsStringLiteral, useQueryState } from 'nuqs'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -391,6 +392,12 @@ export default function ApprovalsPage() {
   const pendingTrust = trustChanges?.length ?? 0
   const isLoading = approvalsLoading || trustLoading
 
+  const [tab, setTab] = useQueryState(
+    'tab',
+    parseAsStringLiteral(['imports', 'trust', 'workflow'] as const),
+  )
+  const activeTab = tab ?? (pendingTrust > 0 ? 'trust' : 'imports')
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -410,7 +417,10 @@ export default function ApprovalsPage() {
       />
 
       <Tabs
-        defaultValue={pendingTrust > 0 ? 'trust' : 'imports'}
+        value={activeTab}
+        onValueChange={(value) => {
+          void setTab(value)
+        }}
         className="gap-4"
       >
         <TabsList

@@ -8,27 +8,32 @@ import {
   LayoutDashboard,
   MonitorSmartphone,
   MoonStar,
-  Package,
   Percent,
   Play,
   ScrollText,
   ShieldAlert,
-  Timer,
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
 import { useId } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/components/auth-provider'
 import { AutoPkgRunsChart } from '@/components/dashboard/autopkg-runs-chart'
+import { FailedInstallsCard } from '@/components/dashboard/failed-installs-card'
+import { FleetInstallRowsChart } from '@/components/dashboard/fleet-install-rows-chart'
 import { FleetTimeseriesChart } from '@/components/dashboard/fleet-timeseries-chart'
+import {
+  type AttentionItem,
+  NeedsAttentionStrip,
+} from '@/components/dashboard/needs-attention-strip'
+import { RecentActivityCard } from '@/components/dashboard/recent-activity-card'
+import { SoftwareRolloutsCard } from '@/components/dashboard/software-rollouts-card'
+import { StaleMachinesCard } from '@/components/dashboard/stale-machines-card'
 import { PageHeading } from '@/components/page-heading'
 import {
   CatalogSoftwareAvatarCircles,
-  SoftwareAvatarCircles,
   SoftwareNameAvatarCircles,
   useSoftwarePreviewPackages,
 } from '@/components/software-avatar-circles'
-import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import {
   Card,
@@ -39,10 +44,12 @@ import {
 } from '@/components/ui/card'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import {
+  type AuditLogRead,
   type AutoPkgRecipeRead,
   type AutoPkgRunRead,
   api,
   type CatalogRead,
+  type FailedInstallSummary,
   type FleetActivityTimeseries,
   type FleetComplianceOverview,
   type ManifestRead,
@@ -50,9 +57,9 @@ import {
   type PkgInfoPromotionQueueItemRead,
   type PkgInfoShardQueueItemRead,
   type RecipeTrustSummaryResponse,
+  type StaleMachinePreview,
   type TrustPendingCountResponse,
 } from '@/lib/api'
-import { formatDate } from '@/lib/format'
 import { parseManifestItemRef } from '@/lib/manifest-item-ref'
 import { manifestTitle } from '@/lib/manifest-title'
 import {
@@ -87,7 +94,7 @@ type StatLinkCardProps = {
   title: string
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
   children: ReactNode
-  footer: ReactNode
+  footer?: ReactNode
 } & (
   | { accent: MunkiAccentKey; borderClass?: never; iconClass?: never }
   | { accent?: never; borderClass: string; iconClass: string }
@@ -127,9 +134,11 @@ function StatLinkCard({
         </CardHeader>
         <CardContent className="space-y-1">
           {children}
-          <p className="text-xs text-muted-foreground [&_a]:pointer-events-auto [&_a]:relative [&_a]:z-3">
-            {footer}
-          </p>
+          {footer != null ? (
+            <p className="text-xs text-muted-foreground [&_a]:pointer-events-auto [&_a]:relative [&_a]:z-3">
+              {footer}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>
@@ -141,6 +150,9 @@ export default function DashboardPage() {
   const canSeeSoftware = !authLoading && canRead(PAGE_KEYS.munkiSoftware)
   const canSeeRecipes = !authLoading && canRead(PAGE_KEYS.autopkgRecipes)
   const canSeeApprovals = !authLoading && canRead(PAGE_KEYS.autopkgApprovals)
+  const canSeeDevices = !authLoading && canRead(PAGE_KEYS.reportingDevices)
+  const canSeeInstalls = !authLoading && canRead(PAGE_KEYS.reportingInstalls)
+  const canSeeAudit = !authLoading && canRead(PAGE_KEYS.adminAudit)
 
   useDocumentTitle('Overview', 'Dashboard')
 
@@ -181,7 +193,7 @@ export default function DashboardPage() {
     queryKey: ['pkginfo', 'promotion-queue'],
     queryFn: () =>
       api.get<PkgInfoPromotionQueueItemRead[]>(
-        '/pkginfo/promotion-queue?limit=8',
+        '/pkginfo/promotion-queue?limit=12',
       ),
     enabled: canSeeSoftware,
     staleTime: 30_000,
@@ -190,7 +202,7 @@ export default function DashboardPage() {
   const { data: shardQueue, isLoading: shardQueueLoading } = useQuery({
     queryKey: ['pkginfo', 'shard-queue'],
     queryFn: () =>
-      api.get<PkgInfoShardQueueItemRead[]>('/pkginfo/shard-queue?limit=8'),
+      api.get<PkgInfoShardQueueItemRead[]>('/pkginfo/shard-queue?limit=12'),
     enabled: canSeeSoftware,
     staleTime: 30_000,
   })
@@ -224,6 +236,34 @@ export default function DashboardPage() {
       api.get<FleetActivityTimeseries>('/reports/fleet-activity?days=30'),
   })
 
+  const { data: failedInstallsSummary, isLoading: failedInstallsLoading } =
+    useQuery({
+      queryKey: ['reports-failed-installs-summary', 7],
+      queryFn: () =>
+        api.get<FailedInstallSummary>(
+          '/reports/failed-installs/summary?days=7&limit=5',
+        ),
+      enabled: canSeeInstalls,
+      staleTime: 30_000,
+    })
+
+  const { data: staleMachinesPreview, isLoading: staleMachinesLoading } =
+    useQuery({
+      queryKey: ['reports-stale-machines', 30],
+      queryFn: () =>
+        api.get<StaleMachinePreview>('/reports/stale-machines?days=30&limit=5'),
+      enabled: canSeeDevices,
+      staleTime: 30_000,
+    })
+
+  const { data: recentAuditPage, isLoading: recentAuditLoading } = useQuery({
+    queryKey: ['audit-recent-dashboard'],
+    queryFn: () =>
+      api.get<PaginatedResponse<AuditLogRead>>('/audit?page_size=8'),
+    enabled: canSeeAudit,
+    staleTime: 30_000,
+  })
+
   const runs = runsPage?.items ?? []
   const totalTitles = softwarePreviewPage?.total ?? 0
   const softwarePreviewItems = softwarePreviewPage?.items ?? []
@@ -234,6 +274,100 @@ export default function DashboardPage() {
   const lastRun = runs[0]
   const pendingApprovals = Array.isArray(approvals) ? approvals.length : 0
   const pendingTrustQueueCount = pendingTrustDash?.count ?? 0
+  const eligiblePromotionCount =
+    promotionQueue?.filter((row) => row.leg_status !== 'waiting').length ?? 0
+  const activeShardCount = shardQueue?.length ?? 0
+  const failedTrustCount = trustSummary?.failed ?? 0
+  const pendingTrustRecipeCount = trustSummary?.pending_approval ?? 0
+  const attentionItems: AttentionItem[] = [
+    ...(pendingApprovals > 0
+      ? [
+          {
+            id: 'import-approvals',
+            label: 'Import approvals',
+            href: '/approvals?tab=imports',
+            count: pendingApprovals,
+            tone: 'warning' as const,
+          },
+        ]
+      : []),
+    ...(pendingTrustQueueCount > 0
+      ? [
+          {
+            id: 'trust-approvals',
+            label: 'Trust approvals',
+            href: '/approvals?tab=trust',
+            count: pendingTrustQueueCount,
+            tone: 'warning' as const,
+          },
+        ]
+      : []),
+    ...(failedTrustCount > 0
+      ? [
+          {
+            id: 'recipe-trust-failed',
+            label: 'Failed recipe trust',
+            href: '/autopkg/recipes?trust_status=failed',
+            count: failedTrustCount,
+            tone: 'danger' as const,
+          },
+        ]
+      : []),
+    ...(pendingTrustRecipeCount > 0
+      ? [
+          {
+            id: 'recipe-trust-pending',
+            label: 'Pending recipe trust',
+            href: '/autopkg/recipes?trust_status=pending_approval',
+            count: pendingTrustRecipeCount,
+            tone: 'warning' as const,
+          },
+        ]
+      : []),
+    ...(eligiblePromotionCount > 0
+      ? [
+          {
+            id: 'eligible-promotions',
+            label: 'Promotions ready',
+            href: '/software?promotion_eligible=true',
+            count: eligiblePromotionCount,
+          },
+        ]
+      : []),
+    ...(activeShardCount > 0
+      ? [
+          {
+            id: 'active-shards',
+            label: 'Production rollouts',
+            href: '/software?rollout_queue=true',
+            count: activeShardCount,
+          },
+        ]
+      : []),
+    ...((compliance?.stale_over_30_days ?? 0) > 0
+      ? [
+          {
+            id: 'stale-devices',
+            label: 'Stale devices',
+            href: '/reporting?stale=30',
+            count: compliance?.stale_over_30_days ?? 0,
+            tone: 'warning' as const,
+          },
+        ]
+      : []),
+    ...(lastRun?.status === 'failed'
+      ? [
+          {
+            id: 'last-run-failed',
+            label: 'Last AutoPkg run failed',
+            href: '/autopkg/runs?status=failed',
+            count: 1,
+            tone: 'danger' as const,
+          },
+        ]
+      : []),
+  ]
+  const recentAuditLogs = recentAuditPage?.items ?? []
 
   return (
     <div className="space-y-10">
@@ -241,6 +375,7 @@ export default function DashboardPage() {
         icon={LayoutDashboard}
         accent="dashboard"
         title="Dashboard"
+        actions={<NeedsAttentionStrip items={attentionItems} />}
       />
 
       <section className="space-y-4">
@@ -248,541 +383,215 @@ export default function DashboardPage() {
           <span className={munkiSectionMarkerClass()} aria-hidden />
           Munki
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-          <Card
-            className={cn(
-              'flex h-full flex-col',
-              munkiAccents.software.statCard,
-            )}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
+        <div className="space-y-4">
+          <SoftwareRolloutsCard
+            totalTitles={totalTitles}
+            softwarePreviewItems={softwarePreviewItems}
+            promotionQueue={promotionQueue}
+            promotionQueueLoading={promotionQueueLoading}
+            shardQueue={shardQueue}
+            shardQueueLoading={shardQueueLoading}
+            canSeeSoftware={canSeeSoftware}
+          />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card
+              className={cn(
+                'flex h-full flex-col',
+                munkiAccents.catalogs.statCard,
+              )}
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  <Link
+                    to="/catalogs"
+                    className="text-foreground hover:underline"
+                  >
+                    Catalogs
+                  </Link>
+                </CardTitle>
                 <Link
-                  to="/software"
-                  className="text-foreground hover:underline"
+                  to="/catalogs"
+                  className="text-foreground"
+                  aria-label="Open catalogs"
                 >
-                  Software
+                  <FolderOpen
+                    className={cn('h-4 w-4', munkiAccents.catalogs.icon)}
+                    aria-hidden
+                  />
                 </Link>
-              </CardTitle>
-              <Link
-                to="/software"
-                className="text-foreground"
-                aria-label="Open software"
-              >
-                <Package
-                  className={cn('h-4 w-4', munkiAccents.software.icon)}
-                  aria-hidden
-                />
-              </Link>
-            </CardHeader>
-            <CardContent className="flex flex-1 flex-col space-y-1">
-              <div className="flex min-h-10 items-center justify-between gap-3">
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col space-y-3">
                 <div
                   className="text-2xl font-bold"
                   style={{ fontVariantNumeric: 'tabular-nums' }}
                 >
-                  {totalTitles}
+                  {totalCatalogs}
                 </div>
-                <SoftwareAvatarCircles
-                  packages={softwarePreviewItems}
-                  total={totalTitles}
-                  interactive={false}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Packages in the repository
-              </p>
-              {canSeeSoftware ? (
-                <div className="mt-3 space-y-3 border-t border-border/60 pt-3">
-                  <div>
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                      <Timer
-                        className="h-4 w-4 shrink-0 text-muted-foreground"
-                        aria-hidden
-                      />
-                      Auto-promotion
-                    </h3>
-                    <p className="pt-0.5 text-xs text-muted-foreground">
-                      Channel path: dwell in progress, or next move on the next
-                      promotion run
-                    </p>
-                  </div>
-                  {promotionQueueLoading ? (
-                    <p
-                      className="text-sm text-muted-foreground"
-                      aria-live="polite"
-                    >
-                      Loading…
-                    </p>
-                  ) : !promotionQueue?.length ? (
-                    <p className="text-sm text-muted-foreground">
-                      No versions are in an active channel step (source catalog)
-                      right now.
-                    </p>
-                  ) : (
-                    <section
-                      className="max-h-72 min-h-0 overflow-y-auto overscroll-y-contain pr-0.5"
-                      aria-label="Auto-promotion queue"
-                    >
-                      <ul className="space-y-2">
-                        {promotionQueue.map((row) => {
-                          const title = row.display_name || row.name
-                          return (
-                            <li key={row.id}>
-                              <Link
-                                to={`/software/${row.id}`}
-                                className={cn(
-                                  'flex flex-col gap-0.5 rounded-md border p-2.5 text-sm transition-colors sm:flex-row sm:items-center sm:justify-between',
-                                  munkiAccents.software.overviewRow,
-                                )}
-                              >
-                                <div className="flex min-w-0 items-start gap-3 sm:items-center">
-                                  <SoftwareIcon
-                                    className="mt-0.5 sm:mt-0"
-                                    name={row.name}
-                                    displayName={row.display_name}
-                                    size="sm"
-                                  />
-                                  <div className="min-w-0">
-                                    <div className="truncate font-medium">
-                                      {title}
-                                    </div>
-                                    <div className="truncate text-xs text-muted-foreground">
-                                      <span className="font-medium text-foreground/80">
-                                        {row.channel_name}
-                                      </span>
-                                      <span> · </span>
-                                      {row.next_source_catalog} →{' '}
-                                      {row.next_target_catalog}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="shrink-0 pl-11 text-xs sm:pl-0 sm:text-right">
-                                  {row.leg_status === 'waiting' ? (
-                                    <span className="text-muted-foreground">
-                                      ~{row.days_remaining}d ·{' '}
-                                      {formatDate(row.promote_at)}
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground">
-                                      Eligible next run
-                                    </span>
-                                  )}
-                                </div>
-                              </Link>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </section>
-                  )}
-                  <div className="space-y-3 border-t border-border/60 pt-3">
-                    <div>
-                      <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                        <Percent
-                          className="h-4 w-4 shrink-0 text-muted-foreground"
-                          aria-hidden
-                        />
-                        Production rollouts
-                      </h3>
-                      <p className="pt-0.5 text-xs text-muted-foreground">
-                        Shard rollout in progress or awaiting approval for
-                        net-new titles
-                      </p>
-                    </div>
-                    {shardQueueLoading ? (
-                      <p className="text-sm text-muted-foreground">Loading…</p>
-                    ) : !shardQueue?.length ? (
-                      <p className="text-sm text-muted-foreground">
-                        No active production shard rollouts.
-                      </p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {shardQueue.map((row) => {
-                          const title = row.display_name || row.name
-                          return (
-                            <li key={row.id}>
-                              <Link
-                                to={`/software/${row.id}`}
-                                className={cn(
-                                  'flex flex-col gap-0.5 rounded-md border p-2.5 text-sm transition-colors sm:flex-row sm:items-center sm:justify-between',
-                                  munkiAccents.software.overviewRow,
-                                )}
-                              >
-                                <div className="min-w-0">
-                                  <div className="truncate font-medium">
-                                    {title}{' '}
-                                    <span className="font-mono text-xs text-muted-foreground">
-                                      {row.version}
-                                    </span>
-                                  </div>
-                                  <div className="truncate text-xs text-muted-foreground">
-                                    {row.deployment_status.replace('_', ' ')}
-                                    {row.shard_percent != null
-                                      ? ` · ${row.shard_percent}%`
-                                      : ''}
-                                    {row.in_manifest &&
-                                    row.is_first_production_deploy
-                                      ? ' · in manifest'
-                                      : ''}
-                                  </div>
-                                </div>
-                              </Link>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card
-            className={cn(
-              'flex h-full flex-col',
-              munkiAccents.catalogs.statCard,
-            )}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                <Link
-                  to="/catalogs"
-                  className="text-foreground hover:underline"
-                >
-                  Catalogs
-                </Link>
-              </CardTitle>
-              <Link
-                to="/catalogs"
-                className="text-foreground"
-                aria-label="Open catalogs"
-              >
-                <FolderOpen
-                  className={cn('h-4 w-4', munkiAccents.catalogs.icon)}
-                  aria-hidden
-                />
-              </Link>
-            </CardHeader>
-            <CardContent className="flex flex-1 flex-col space-y-3">
-              <div
-                className="text-2xl font-bold"
-                style={{ fontVariantNumeric: 'tabular-nums' }}
-              >
-                {totalCatalogs}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Production and staging catalogs with item counts
-              </p>
-              {catalogs?.length ? (
-                <div className="space-y-3">
-                  {catalogs.map((cat) => (
-                    <Link
-                      key={cat.id}
-                      to="/catalogs"
-                      className={cn(
-                        'flex items-center justify-between gap-2 rounded-md border p-3 transition-colors sm:gap-3',
-                        munkiAccents.catalogs.overviewRow,
-                      )}
-                    >
-                      <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <span className="truncate font-medium">{cat.name}</span>
-                        {cat.is_production && (
-                          <Badge variant="default">Production</Badge>
+                <p className="text-xs text-muted-foreground">
+                  Production and staging catalogs with item counts
+                </p>
+                {catalogs?.length ? (
+                  <div className="space-y-3">
+                    {catalogs.slice(0, 5).map((cat) => (
+                      <Link
+                        key={cat.id}
+                        to="/catalogs"
+                        className={cn(
+                          'flex items-center justify-between gap-2 rounded-md border p-3 transition-colors sm:gap-3',
+                          munkiAccents.catalogs.overviewRow,
                         )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span
-                          className="whitespace-nowrap text-sm text-muted-foreground"
-                          style={{ fontVariantNumeric: 'tabular-nums' }}
-                        >
-                          {cat.item_count} items
-                        </span>
-                        <CatalogSoftwareAvatarCircles
-                          catalogName={cat.name}
-                          className="shrink-0"
-                          interactive={false}
-                          itemCount={cat.item_count}
-                        />
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No catalogs yet</p>
-              )}
-            </CardContent>
-          </Card>
+                      >
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <span className="truncate font-medium">
+                            {cat.name}
+                          </span>
+                          {/* {cat.is_production && (
+                          <Badge variant="default">Production</Badge>
+                        )} */}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span
+                            className="whitespace-nowrap text-sm text-muted-foreground"
+                            style={{ fontVariantNumeric: 'tabular-nums' }}
+                          >
+                            {cat.item_count} items
+                          </span>
+                          <CatalogSoftwareAvatarCircles
+                            catalogName={cat.name}
+                            className="shrink-0"
+                            interactive={false}
+                            itemCount={cat.item_count}
+                          />
+                        </div>
+                      </Link>
+                    ))}
+                    {catalogs.length > 5 ? (
+                      <Link
+                        to="/catalogs"
+                        className="block text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      >
+                        View all {catalogs.length} catalogs
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No catalogs yet
+                  </p>
+                )}
+              </CardContent>
+            </Card>
 
-          <Card
-            className={cn(
-              'flex h-full flex-col',
-              munkiAccents.manifests.statCard,
-            )}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
+            <Card
+              className={cn(
+                'flex h-full flex-col',
+                munkiAccents.manifests.statCard,
+              )}
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  <Link
+                    to="/manifests"
+                    className="text-foreground hover:underline"
+                  >
+                    Manifests
+                  </Link>
+                </CardTitle>
                 <Link
                   to="/manifests"
-                  className="text-foreground hover:underline"
+                  className="text-foreground"
+                  aria-label="Open manifests"
                 >
-                  Manifests
+                  <ScrollText
+                    className={cn('h-4 w-4', munkiAccents.manifests.icon)}
+                    aria-hidden
+                  />
                 </Link>
-              </CardTitle>
-              <Link
-                to="/manifests"
-                className="text-foreground"
-                aria-label="Open manifests"
-              >
-                <ScrollText
-                  className={cn('h-4 w-4', munkiAccents.manifests.icon)}
-                  aria-hidden
-                />
-              </Link>
-            </CardHeader>
-            <CardContent className="flex flex-1 flex-col space-y-3">
-              <div
-                className="text-2xl font-bold"
-                style={{ fontVariantNumeric: 'tabular-nums' }}
-              >
-                {totalManifests}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Computer manifests and install rules
-              </p>
-              {manifests?.length ? (
-                <div className="space-y-3">
-                  {[...manifests]
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((m) => {
-                      const installCount =
-                        m.managed_installs.length +
-                        m.managed_uninstalls.length +
-                        m.optional_installs.length
-                      const iconNames = namesForManifestDashboardIcons(m)
-                      return (
-                        <Link
-                          key={m.id}
-                          to={`/manifests/${m.id}`}
-                          className={cn(
-                            'flex items-center justify-between gap-2 rounded-md border p-3 transition-colors sm:gap-3',
-                            munkiAccents.manifests.overviewRow,
-                          )}
-                        >
-                          <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
-                            <FileText
-                              className={cn(
-                                'mt-0.5 h-5 w-5 shrink-0 sm:mt-0',
-                                munkiAccents.manifests.icon,
-                              )}
-                              aria-hidden
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate font-medium">
-                                {manifestTitle(m)}
-                              </div>
-                              {manifestTitle(m) !== m.name ? (
-                                <div className="truncate text-xs text-muted-foreground">
-                                  {m.name}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <SoftwareNameAvatarCircles
-                              className="shrink-0"
-                              hideWhenEmpty
-                              interactive={false}
-                              maxVisible={DASHBOARD_MANIFEST_LIST_AVATAR_MAX}
-                              names={iconNames}
-                            />
-                            <span
-                              className="whitespace-nowrap text-sm text-muted-foreground"
-                              style={{ fontVariantNumeric: 'tabular-nums' }}
-                            >
-                              {installCount} installs
-                            </span>
-                          </div>
-                        </Link>
-                      )
-                    })}
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col space-y-3">
+                <div
+                  className="text-2xl font-bold"
+                  style={{ fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {totalManifests}
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No manifests yet
+                <p className="text-xs text-muted-foreground">
+                  Computer manifests and install rules
                 </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <h2 className={munkiSectionHeadingClass()}>
-          <span className={munkiSectionMarkerClass()} aria-hidden />
-          Device reporting
-        </h2>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          Macs checking in via the Munki Manager agent or Munki postflight. Open{' '}
-          <Link
-            to="/reporting"
-            className="font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Devices
-          </Link>{' '}
-          or{' '}
-          <Link
-            to="/reporting/installs"
-            className="font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Installs
-          </Link>{' '}
-          for full lists.
-        </p>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card
-            className={cn(
-              'border-l-4 border-l-gruvbox-blue/50 bg-gruvbox-blue/[0.06]',
-            )}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Fleet size</CardTitle>
-              <MonitorSmartphone
-                className="size-4 text-gruvbox-blue"
-                aria-hidden
-              />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-semibold">
-                {complianceLoading ? '—' : (compliance?.total_machines ?? 0)}
-              </p>
-              <CardDescription>machines in database</CardDescription>
-            </CardContent>
-          </Card>
-          <Card
-            className={cn(
-              'border-l-4 border-l-gruvbox-green/50 bg-gruvbox-green/[0.06]',
-            )}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active (7d)</CardTitle>
-              <Activity className="size-4 text-gruvbox-green" aria-hidden />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-semibold">
-                {complianceLoading
-                  ? '—'
-                  : (compliance?.checked_in_last_7_days ?? 0)}
-              </p>
-              <CardDescription>checked in recently</CardDescription>
-            </CardContent>
-          </Card>
-          <Card
-            className={cn(
-              'border-l-4 border-l-gruvbox-orange/50 bg-gruvbox-orange/[0.07]',
-            )}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Stale (30d+)
-              </CardTitle>
-              <MoonStar className="size-4 text-gruvbox-orange" aria-hidden />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-semibold">
-                {complianceLoading
-                  ? '—'
-                  : (compliance?.stale_over_30_days ?? 0)}
-              </p>
-              <CardDescription>no check-in in 30 days</CardDescription>
-            </CardContent>
-          </Card>
-          <Card
-            className={cn(
-              'border-l-4 border-l-gruvbox-purple/50 bg-gruvbox-purple/[0.06]',
-            )}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">7-day reach</CardTitle>
-              <Percent className="size-4 text-gruvbox-purple" aria-hidden />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-semibold">
-                {complianceLoading
-                  ? '—'
-                  : `${compliance?.compliance_percentage ?? 0}%`}
-              </p>
-              <CardDescription>of fleet reporting weekly</CardDescription>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card
-            className={cn('flex flex-col', munkiAccents.reporting.statCard)}
-          >
-            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-              <div>
-                <CardTitle>Check-ins over time</CardTitle>
-                <CardDescription>
-                  Check-in events per day (last 30 days)
-                </CardDescription>
-              </div>
-              <Link
-                to="/reporting"
-                className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Devices
-              </Link>
-            </CardHeader>
-            <CardContent className="flex-1">
-              {fleetActivityLoading ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : (
-                <FleetTimeseriesChart
-                  points={fleetActivity?.checkins_by_day ?? []}
-                  seriesLabel="Check-ins"
-                  gradientId="fillFleetCheckins"
-                  strokeVar="var(--chart-1)"
-                  emptyMessage="No check-ins yet — data appears after Macs report in."
-                />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card
-            className={cn('flex flex-col', munkiAccents.reporting.statCard)}
-          >
-            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-              <div>
-                <CardTitle>Install rows over time</CardTitle>
-                <CardDescription>
-                  Managed install report rows recorded per day (last 30 days)
-                </CardDescription>
-              </div>
-              <Link
-                to="/reporting/installs"
-                className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Installs
-              </Link>
-            </CardHeader>
-            <CardContent className="flex-1">
-              {fleetActivityLoading ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : (
-                <FleetTimeseriesChart
-                  points={fleetActivity?.install_rows_by_day ?? []}
-                  seriesLabel="Rows"
-                  gradientId="fillFleetInstalls"
-                  strokeVar="var(--chart-3)"
-                  emptyMessage="No install report rows yet — they appear when clients send ManagedInstallReport data."
-                />
-              )}
-            </CardContent>
-          </Card>
+                {manifests?.length ? (
+                  <div className="space-y-3">
+                    {[...manifests]
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .slice(0, 5)
+                      .map((m) => {
+                        const installCount =
+                          m.managed_installs.length +
+                          m.managed_uninstalls.length +
+                          m.optional_installs.length
+                        const iconNames = namesForManifestDashboardIcons(m)
+                        return (
+                          <Link
+                            key={m.id}
+                            to={`/manifests/${m.id}`}
+                            className={cn(
+                              'flex items-center justify-between gap-2 rounded-md border p-3 transition-colors sm:gap-3',
+                              munkiAccents.manifests.overviewRow,
+                            )}
+                          >
+                            <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
+                              <FileText
+                                className={cn(
+                                  'mt-0.5 h-5 w-5 shrink-0 sm:mt-0',
+                                  munkiAccents.manifests.icon,
+                                )}
+                                aria-hidden
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-medium">
+                                  {manifestTitle(m)}
+                                </div>
+                                {manifestTitle(m) !== m.name ? (
+                                  <div className="truncate text-xs text-muted-foreground">
+                                    {m.name}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <SoftwareNameAvatarCircles
+                                className="shrink-0"
+                                hideWhenEmpty
+                                interactive={false}
+                                maxVisible={DASHBOARD_MANIFEST_LIST_AVATAR_MAX}
+                                names={iconNames}
+                              />
+                              <span
+                                className="whitespace-nowrap text-sm text-muted-foreground"
+                                style={{ fontVariantNumeric: 'tabular-nums' }}
+                              >
+                                {installCount} installs
+                              </span>
+                            </div>
+                          </Link>
+                        )
+                      })}
+                    {manifests.length > 5 ? (
+                      <Link
+                        to="/manifests"
+                        className="block text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      >
+                        View all {manifests.length} manifests
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No manifests yet
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </section>
 
@@ -827,16 +636,22 @@ export default function DashboardPage() {
             title="Runs"
             icon={Play}
             iconClass="text-gruvbox-red"
-            footer="Total runs recorded in the system"
+            footer={lastRun ? null : 'No runs recorded yet'}
           >
-            <div className="space-y-1">
+            <div>
               <div
                 className="text-2xl font-bold"
                 style={{ fontVariantNumeric: 'tabular-nums' }}
               >
                 {totalRuns}
               </div>
-              {lastRun ? (
+              <p className="text-xs text-muted-foreground">Total runs</p>
+            </div>
+            {lastRun ? (
+              <div className="mt-3 space-y-1">
+                <p className="text-xs font-bold text-muted-foreground">
+                  Last run results:
+                </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge
                     variant={
@@ -854,8 +669,8 @@ export default function DashboardPage() {
                     {lastRun.recipes_failed ?? 0} failed
                   </span>
                 </div>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </StatLinkCard>
 
           <StatLinkCard
@@ -922,8 +737,8 @@ export default function DashboardPage() {
             <div>
               <CardTitle>Run activity</CardTitle>
               <CardDescription>
-                Runs per day over the last 30 days (from your 100 most recent
-                runs)
+                Runs, imports, and failures per day over the last 30 days (from
+                your 100 most recent runs)
               </CardDescription>
             </div>
             <Link
@@ -937,6 +752,188 @@ export default function DashboardPage() {
             <AutoPkgRunsChart runs={runs} />
           </CardContent>
         </Card>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className={munkiSectionHeadingClass()}>
+          <span className={munkiSectionMarkerClass()} aria-hidden />
+          Device reporting
+        </h2>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Macs checking in via the Munki Manager agent or Munki postflight. Open{' '}
+          <Link
+            to="/reporting"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Devices
+          </Link>{' '}
+          or{' '}
+          <Link
+            to="/reporting/installs"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Installs
+          </Link>{' '}
+          for full lists.
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card
+            className={cn(
+              'border-l-4 border-l-gruvbox-blue/50 bg-gruvbox-blue/6',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Fleet size</CardTitle>
+              <MonitorSmartphone
+                className="size-4 text-gruvbox-blue"
+                aria-hidden
+              />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">
+                {complianceLoading ? '—' : (compliance?.total_machines ?? 0)}
+              </p>
+              <CardDescription>machines in database</CardDescription>
+            </CardContent>
+          </Card>
+          <Card
+            className={cn(
+              'border-l-4 border-l-gruvbox-green/50 bg-gruvbox-green/6',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active (7d)</CardTitle>
+              <Activity className="size-4 text-gruvbox-green" aria-hidden />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">
+                {complianceLoading
+                  ? '—'
+                  : (compliance?.checked_in_last_7_days ?? 0)}
+              </p>
+              <CardDescription>checked in recently</CardDescription>
+            </CardContent>
+          </Card>
+          <Card
+            className={cn(
+              'border-l-4 border-l-gruvbox-orange/50 bg-gruvbox-orange/[0.07]',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Stale (30d+)
+              </CardTitle>
+              <MoonStar className="size-4 text-gruvbox-orange" aria-hidden />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">
+                {complianceLoading
+                  ? '—'
+                  : (compliance?.stale_over_30_days ?? 0)}
+              </p>
+              <CardDescription>no check-in in 30 days</CardDescription>
+            </CardContent>
+          </Card>
+          <Card
+            className={cn(
+              'border-l-4 border-l-gruvbox-purple/50 bg-gruvbox-purple/6',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">7-day reach</CardTitle>
+              <Percent className="size-4 text-gruvbox-purple" aria-hidden />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">
+                {complianceLoading
+                  ? '—'
+                  : `${compliance?.compliance_percentage ?? 0}%`}
+              </p>
+              <CardDescription>of fleet reporting weekly</CardDescription>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card
+            className={cn('flex flex-col', munkiAccents.reporting.statCard)}
+          >
+            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+              <div>
+                <CardTitle>Check-ins over time</CardTitle>
+                <CardDescription>
+                  Check-in events per day (last 30 days)
+                </CardDescription>
+              </div>
+              <Link
+                to="/reporting"
+                className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Devices
+              </Link>
+            </CardHeader>
+            <CardContent className="flex-1">
+              {fleetActivityLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : (
+                <FleetTimeseriesChart
+                  points={fleetActivity?.checkins_by_day ?? []}
+                  seriesLabel="Check-ins"
+                  gradientId="fillFleetCheckins"
+                  strokeVar="var(--gruvbox-blue)"
+                  emptyMessage="No check-ins yet — data appears after Macs report in."
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card
+            className={cn('flex flex-col', munkiAccents.reporting.statCard)}
+          >
+            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+              <div>
+                <CardTitle>Install rows over time</CardTitle>
+                <CardDescription>
+                  Successful installs and failures per day (last 30 days)
+                </CardDescription>
+              </div>
+              <Link
+                to="/reporting/installs"
+                className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Installs
+              </Link>
+            </CardHeader>
+            <CardContent className="flex-1">
+              {fleetActivityLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : (
+                <FleetInstallRowsChart
+                  installedByDay={fleetActivity?.install_installed_by_day ?? []}
+                  failedByDay={fleetActivity?.install_failed_by_day ?? []}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <FailedInstallsCard
+            summary={failedInstallsSummary}
+            isLoading={failedInstallsLoading}
+          />
+          <StaleMachinesCard
+            preview={staleMachinesPreview}
+            isLoading={staleMachinesLoading}
+          />
+          {canSeeAudit ? (
+            <RecentActivityCard
+              logs={recentAuditLogs}
+              isLoading={recentAuditLoading}
+            />
+          ) : null}
+        </div>
       </section>
     </div>
   )

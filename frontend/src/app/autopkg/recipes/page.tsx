@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import {
@@ -121,6 +121,24 @@ export default function RecipesPage() {
   useEffect(() => {
     if (!canRun) setRowSelection({})
   }, [canRun])
+
+  const [searchParams] = useSearchParams()
+  useEffect(() => {
+    const trustFromUrl = searchParams.get('trust_status')?.trim()
+    if (
+      !trustFromUrl ||
+      !['verified', 'failed', 'pending_approval', 'unknown'].includes(
+        trustFromUrl,
+      )
+    ) {
+      return
+    }
+    setListState((prev) =>
+      prev.trustStatus === trustFromUrl
+        ? prev
+        : { ...prev, trustStatus: trustFromUrl, page: 1 },
+    )
+  }, [searchParams, setListState])
 
   const [importOpen, setImportOpen] = useState(false)
   const [importContent, setImportContent] = useState('')
@@ -422,11 +440,34 @@ export default function RecipesPage() {
     ],
   )
 
-  const hasFilters =
-    Boolean(search.trim()) || Boolean(enabled) || Boolean(trustStatus.trim())
-  const activeFilterCount = [search.trim(), enabled, trustStatus.trim()].filter(
-    Boolean,
-  ).length
+  const hasSheetFilters = Boolean(enabled) || Boolean(trustStatus.trim())
+  const activeFilterCount = [enabled, trustStatus.trim()].filter(Boolean).length
+  const activeFilters = [
+    ...(enabled
+      ? [
+          {
+            id: 'enabled',
+            label: enabled === 'true' ? 'Enabled' : 'Disabled',
+            onRemove: () => {
+              setRowSelection({})
+              setListState((p) => ({ ...p, enabled: '', page: 1 }))
+            },
+          },
+        ]
+      : []),
+    ...(trustStatus.trim()
+      ? [
+          {
+            id: 'trustStatus',
+            label: `Trust: ${trustStatus.replace('_', ' ')}`,
+            onRemove: () => {
+              setRowSelection({})
+              setListState((p) => ({ ...p, trustStatus: '', page: 1 }))
+            },
+          },
+        ]
+      : []),
+  ]
 
   return (
     <div className="flex h-[calc(100vh-3rem)] min-w-0 w-full max-w-full flex-col gap-4">
@@ -531,14 +572,14 @@ export default function RecipesPage() {
       />
 
       <PageFilters
-        isFiltered={hasFilters}
+        isFiltered={hasSheetFilters}
         activeFilterCount={activeFilterCount}
+        activeFilters={activeFilters}
         sheetDescription="Refine the recipe list."
         onClear={() => {
           setRowSelection({})
           setListState((p) => ({
             ...p,
-            search: '',
             enabled: '',
             trustStatus: '',
             page: 1,
@@ -548,27 +589,29 @@ export default function RecipesPage() {
           <ColumnVisibilityMenu
             columns={columns}
             columnVisibility={columnVisibility}
+            defaultColumnVisibility={recipeListDefaultColumnVisibility}
             onColumnVisibilityChange={setColumnVisibility}
           />
         }
+        search={
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search recipes..."
+              value={search}
+              onChange={(e) => {
+                setRowSelection({})
+                setListState((p) => ({
+                  ...p,
+                  search: e.target.value,
+                  page: 1,
+                }))
+              }}
+              className="pl-9"
+            />
+          </div>
+        }
       >
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search recipes..."
-            value={search}
-            onChange={(e) => {
-              setRowSelection({})
-              setListState((p) => ({
-                ...p,
-                search: e.target.value,
-                page: 1,
-              }))
-            }}
-            className="pl-9"
-          />
-        </div>
-
         <Select
           value={enabled || '_all'}
           onValueChange={(v) => {
@@ -580,7 +623,7 @@ export default function RecipesPage() {
             }))
           }}
         >
-          <SelectTrigger className="w-full md:w-[140px]">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -601,10 +644,7 @@ export default function RecipesPage() {
             }))
           }}
         >
-          <SelectTrigger
-            className="w-full md:w-[160px]"
-            aria-label="Filter by trust"
-          >
+          <SelectTrigger className="w-full" aria-label="Filter by trust">
             <SelectValue placeholder="Trust" />
           </SelectTrigger>
           <SelectContent>

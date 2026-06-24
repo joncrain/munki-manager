@@ -34,12 +34,13 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { usePkginfoVersionsForName } from '@/hooks/use-pkginfo-versions'
-import { api, type PaginatedResponse, type PkgInfoSummary } from '@/lib/api'
+import type { PkgInfoSummary } from '@/lib/api'
 import {
   formatManifestItemRef,
   manifestItemBaseNamesInUse,
   parseManifestItemRef,
 } from '@/lib/manifest-item-ref'
+import { fetchPkginfoForPicker } from '@/lib/pkginfo-api'
 import { cn } from '@/lib/utils'
 
 const commandPopoverContentClass =
@@ -253,22 +254,19 @@ function AddSoftwareButton({
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
 
-  const { data } = useQuery({
-    queryKey: ['pkginfo-search', search],
-    queryFn: () =>
-      api.get<PaginatedResponse<PkgInfoSummary>>(
-        `/pkginfo?page_size=40${search ? `&search=${encodeURIComponent(search)}` : ''}`,
-      ),
+  const { data: items = [], isFetching } = useQuery({
+    queryKey: ['pkginfo-picker', search],
+    queryFn: () => fetchPkginfoForPicker(search),
     enabled: open,
   })
 
   const itemsByName = useMemo(() => {
     const m = new Map<string, PkgInfoSummary>()
-    for (const item of data?.items ?? []) {
+    for (const item of items) {
       if (!m.has(item.name)) m.set(item.name, item)
     }
     return m
-  }, [data?.items])
+  }, [items])
 
   const basesInUse = useMemo(
     () => manifestItemBaseNamesInUse(existingItems),
@@ -297,49 +295,57 @@ function AddSoftwareButton({
             onValueChange={setSearch}
           />
           <CommandList className="max-h-[min(50vh,320px)]">
-            <CommandEmpty>No results.</CommandEmpty>
-            <CommandGroup>
-              {uniqueNames.map((name) => {
-                const pkg = itemsByName.get(name)
-                const title = pkg?.display_name?.trim() || name
-                const developer = pkg?.developer?.trim()
-                return (
-                  <CommandItem
-                    key={name}
-                    value={[name, pkg?.display_name, developer]
-                      .filter(Boolean)
-                      .join(' ')}
-                    onSelect={() => {
-                      onAdd(name)
-                      setOpen(false)
-                      setSearch('')
-                    }}
-                    className="gap-2"
-                  >
-                    <SoftwareIcon
-                      name={name}
-                      displayName={pkg?.display_name}
-                      size="sm"
-                      className="shrink-0"
-                    />
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate font-medium">{title}</span>
-                      {developer ? (
-                        <span className="truncate text-xs text-muted-foreground">
-                          {developer}
-                        </span>
-                      ) : (
-                        title !== name && (
-                          <span className="truncate text-xs text-muted-foreground">
-                            {name}
-                          </span>
-                        )
-                      )}
-                    </div>
-                  </CommandItem>
-                )
-              })}
-            </CommandGroup>
+            {isFetching ? (
+              <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                Loading software…
+              </div>
+            ) : (
+              <>
+                <CommandEmpty>No results.</CommandEmpty>
+                <CommandGroup>
+                  {uniqueNames.map((name) => {
+                    const pkg = itemsByName.get(name)
+                    const title = pkg?.display_name?.trim() || name
+                    const developer = pkg?.developer?.trim()
+                    return (
+                      <CommandItem
+                        key={name}
+                        value={[name, pkg?.display_name, developer]
+                          .filter(Boolean)
+                          .join(' ')}
+                        onSelect={() => {
+                          onAdd(name)
+                          setOpen(false)
+                          setSearch('')
+                        }}
+                        className="gap-2"
+                      >
+                        <SoftwareIcon
+                          name={name}
+                          displayName={pkg?.display_name}
+                          size="sm"
+                          className="shrink-0"
+                        />
+                        <div className="flex min-w-0 flex-col">
+                          <span className="truncate font-medium">{title}</span>
+                          {developer ? (
+                            <span className="truncate text-xs text-muted-foreground">
+                              {developer}
+                            </span>
+                          ) : (
+                            title !== name && (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {name}
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </CommandItem>
+                    )
+                  })}
+                </CommandGroup>
+              </>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

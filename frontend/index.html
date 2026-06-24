@@ -12,20 +12,21 @@
       rel="stylesheet"
     />
     <script>
+      var k = 'munki-manager-color-palette'
+      var leg = 'automunki-color-palette'
+      var p
       try {
-                    var k = 'munki-manager-color-palette'
-                    var leg = 'automunki-color-palette'
-                    var p = localStorage.getItem(k) || localStorage.getItem(leg)
-                    if (
-                      p === 'monokai' ||
-                      p === 'one-dark' ||
-                      p === 'catppuccin'
-                    ) {
-                      document.documentElement.setAttribute('data-palette', p)
-                    }
-                  } catch {
-                    /* storage unavailable */
-                  }
+        p = localStorage.getItem(k) || localStorage.getItem(leg)
+        if (
+          p === 'monokai' ||
+          p === 'one-dark' ||
+          p === 'catppuccin'
+        ) {
+          document.documentElement.setAttribute('data-palette', p)
+        }
+      } catch {
+        /* storage unavailable */
+      }
     </script>
   </head>
   <body class="antialiased" style="font-family: 'Geist', sans-serif; --font-geist-sans: 'Geist', sans-serif; --font-geist-mono: 'Geist Mono', monospace;">

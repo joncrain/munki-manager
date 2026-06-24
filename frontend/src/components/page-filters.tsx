@@ -1,46 +1,78 @@
 import { Filter, X } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import {
+  ActiveFilterBadges,
+  type ActiveFilterChip,
+} from '@/components/filter-badge'
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from '@/components/ui/sheet'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 
 type PageFiltersProps = {
+  /** Filter controls shown in the sheet (search stays in the toolbar via `search`). */
   children: ReactNode
+  /** Search input rendered in the top bar (not in the sheet). */
+  search?: ReactNode
   isFiltered?: boolean
   activeFilterCount?: number
   onClear?: () => void
+  activeFilters?: ActiveFilterChip[]
   trailing?: ReactNode
   className?: string
   sheetDescription?: string
 }
 
-function ClearFiltersButton({ onClear }: { onClear: () => void }) {
+function FilterSheetButton({
+  count,
+  isFiltered,
+  onClear,
+  onOpen,
+}: {
+  count: number
+  isFiltered: boolean
+  onClear?: () => void
+  onOpen: () => void
+}) {
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      aria-label="Clear filters"
-      onClick={onClear}
-    >
-      <X className="h-4 w-4" />
-      Clear
-    </Button>
+    <div className="inline-flex h-8 items-stretch overflow-hidden rounded-md border bg-background shadow-xs">
+      <button
+        type="button"
+        className="flex h-full items-center gap-1.5 px-2.5 text-sm hover:bg-accent hover:text-accent-foreground"
+        onClick={onOpen}
+      >
+        <Filter className="size-4 shrink-0" aria-hidden="true" />
+        Filters{count > 0 ? ` (${count})` : ''}
+      </button>
+      {isFiltered && onClear ? (
+        <>
+          <span className="w-px self-stretch bg-border" aria-hidden="true" />
+          <button
+            type="button"
+            className="flex h-full items-center px-2 hover:bg-accent hover:text-accent-foreground"
+            aria-label="Clear filters"
+            onClick={onClear}
+          >
+            <X className="size-3.5" />
+          </button>
+        </>
+      ) : null}
+    </div>
   )
 }
 
 export function PageFilters({
   children,
+  search,
   isFiltered = false,
   activeFilterCount = 0,
   onClear,
+  activeFilters = [],
   trailing,
   className,
   sheetDescription = 'Refine the list with one or more filters.',
@@ -49,43 +81,36 @@ export function PageFilters({
   const [open, setOpen] = useState(false)
   const count = activeFilterCount > 0 ? activeFilterCount : isFiltered ? 1 : 0
 
-  if (isMobile) {
-    return (
-      <div className={cn('flex w-full items-center gap-2', className)}>
+  return (
+    <div className={cn('flex w-full items-center gap-2', className)}>
+      {search ? <div className="min-w-0 shrink">{search}</div> : null}
+
+      <div className="ml-auto flex min-w-0 items-center gap-2">
+        <ActiveFilterBadges filters={activeFilters} />
         <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="sm" className="shrink-0">
-              <Filter className="h-4 w-4" />
-              Filters{count > 0 ? ` (${count})` : ''}
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto">
+          <FilterSheetButton
+            count={count}
+            isFiltered={isFiltered}
+            onClear={onClear}
+            onOpen={() => setOpen(true)}
+          />
+          <SheetContent
+            side={isMobile ? 'bottom' : 'right'}
+            className={cn(
+              isMobile ? 'max-h-[85vh] overflow-y-auto' : 'w-full sm:max-w-md',
+            )}
+          >
             <SheetHeader>
               <SheetTitle>Filters</SheetTitle>
               <SheetDescription>{sheetDescription}</SheetDescription>
             </SheetHeader>
-            <div className="flex flex-col gap-3 px-4 pb-4 [&_button[role=combobox]]:w-full [&_input]:w-full">
+            <div className="flex flex-col gap-4 px-4 pb-4 [&_button[role=combobox]]:w-full [&_input]:w-full">
               {children}
             </div>
-            {isFiltered && onClear ? (
-              <div className="border-t px-4 py-3">
-                <ClearFiltersButton onClear={onClear} />
-              </div>
-            ) : null}
           </SheetContent>
         </Sheet>
-        {trailing ? <div className="ml-auto shrink-0">{trailing}</div> : null}
+        {trailing}
       </div>
-    )
-  }
-
-  return (
-    <div className={cn('flex w-full flex-wrap items-center gap-2', className)}>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-        {children}
-      </div>
-      {isFiltered && onClear ? <ClearFiltersButton onClear={onClear} /> : null}
-      {trailing ? <div className="ml-auto shrink-0">{trailing}</div> : null}
     </div>
   )
 }

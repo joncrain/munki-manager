@@ -14,9 +14,10 @@ import {
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
 import { useMemo } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { DataTable } from '@/components/data-table'
+import { FilterBadge } from '@/components/filter-badge'
 import { VersionWithLatestBadge } from '@/components/latest-version-badge'
 import { DeviceCheckinsChart } from '@/components/reporting/device-checkins-chart'
 import { MacDeviceHeroVisual } from '@/components/reporting/mac-device-visual'
@@ -79,6 +80,10 @@ function makeReportColumns(
         { displayName: string; pkginfoId: string | null; isLatest: boolean }
       >
     | undefined,
+  filters: {
+    onStatusFilter: (status: string) => void
+    onItemFilter: (itemName: string) => void
+  },
 ): ColumnDef<ClientInstallReportRow>[] {
   return [
     {
@@ -115,6 +120,9 @@ function makeReportColumns(
           <VersionWithLatestBadge
             version={item_version}
             isLatest={link?.isLatest}
+            onLatestFilter={
+              item_name ? () => filters.onItemFilter(item_name) : undefined
+            }
           />
         )
       },
@@ -122,11 +130,18 @@ function makeReportColumns(
     {
       accessorKey: 'status',
       header: 'Status',
-      cell: ({ row }) => (
-        <Badge variant={reportStatusVariant(row.original.status)}>
-          {row.original.status}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const status = row.original.status
+        return (
+          <FilterBadge
+            variant={reportStatusVariant(status)}
+            onFilter={() => filters.onStatusFilter(status)}
+            ariaLabel={`View ${status} install reports for this device`}
+          >
+            {status}
+          </FilterBadge>
+        )
+      },
     },
     {
       accessorKey: 'install_reason',
@@ -183,6 +198,7 @@ function SpecRow({
 
 export default function ReportingDevicePage() {
   const params = useParams()
+  const navigate = useNavigate()
   const id = typeof params.id === 'string' ? params.id : ''
 
   const { data, isLoading, error } = useQuery({
@@ -215,9 +231,29 @@ export default function ReportingDevicePage() {
   const installReports = data?.install_reports ?? []
   const { data: pkginfoLinks } =
     usePkginfoLinksForInstallReports(installReports)
+
+  const deviceInstallSearch =
+    data?.hostname?.trim() || data?.serial_number?.trim() || ''
+
   const reportColumns = useMemo(
-    () => makeReportColumns(pkginfoLinks),
-    [pkginfoLinks],
+    () =>
+      makeReportColumns(pkginfoLinks, {
+        onStatusFilter: (status) => {
+          const params = new URLSearchParams({ status })
+          if (deviceInstallSearch) {
+            params.set('q', deviceInstallSearch)
+          }
+          navigate(`/reporting/installs?${params.toString()}`)
+        },
+        onItemFilter: (itemName) => {
+          const params = new URLSearchParams({ item_name: itemName })
+          if (deviceInstallSearch) {
+            params.set('q', deviceInstallSearch)
+          }
+          navigate(`/reporting/installs?${params.toString()}`)
+        },
+      }),
+    [deviceInstallSearch, navigate, pkginfoLinks],
   )
 
   if (error) {

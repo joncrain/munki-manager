@@ -3,18 +3,33 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { MonitorSmartphone } from 'lucide-react'
 import { parseAsString, useQueryState } from 'nuqs'
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
+import { FilterBadge } from '@/components/filter-badge'
+import { PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
-import { Badge } from '@/components/ui/badge'
+import {
+  CheckinFilterControl,
+  checkinFilterActiveCount,
+  checkinFilterIsActive,
+} from '@/components/reporting/checkin-filter-control'
 import { Input } from '@/components/ui/input'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import { usePaginatedListQuery } from '@/hooks/use-paginated-list-query'
 import { api, type ClientMachineSummary, type ManifestRead } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import {
+  checkinFilterApiParams,
+  checkinFilterLabel,
+  parseCheckinFilter,
+} from '@/lib/reporting-device-filters'
 
 function makeColumns(
   manifestIdByName: Map<string, string>,
+  filters: {
+    onNeverCheckinFilter: () => void
+    onInstallRowsFilter: (hostname: string, serial: string) => void
+  },
 ): ColumnDef<ClientMachineSummary>[] {
   return [
     {
@@ -70,22 +85,48 @@ function makeColumns(
             {formatDateTime(row.original.last_checkin_at)}
           </span>
         ) : (
-          <span className="text-muted-foreground">Never</span>
+          <FilterBadge
+            variant="outline"
+            className="font-normal text-muted-foreground"
+            onFilter={filters.onNeverCheckinFilter}
+            ariaLabel="Filter to devices that never checked in"
+          >
+            Never
+          </FilterBadge>
         ),
     },
     {
       accessorKey: 'install_report_count',
       header: 'Install rows',
-      cell: ({ row }) => (
-        <Badge variant="outline">{row.original.install_report_count}</Badge>
-      ),
+      cell: ({ row }) => {
+        const { install_report_count, hostname, serial_number } = row.original
+        const label = String(install_report_count)
+        const deviceLabel = hostname || serial_number || 'this device'
+        return (
+          <FilterBadge
+            variant="outline"
+            onFilter={() =>
+              filters.onInstallRowsFilter(hostname ?? '', serial_number ?? '')
+            }
+            ariaLabel={`View install reports for ${deviceLabel}`}
+          >
+            {label}
+          </FilterBadge>
+        )
+      },
     },
   ]
 }
 
 export default function ReportingPage() {
   useDocumentTitle('Reporting', 'Devices')
+  const navigate = useNavigate()
   const [search, setSearch] = useQueryState('q', parseAsString.withDefault(''))
+  const [checkinFilterRaw, setCheckinFilter] = useQueryState(
+    'stale',
+    parseAsString.withDefault(''),
+  )
+  const checkinFilter = parseCheckinFilter(checkinFilterRaw)
 
   const { data: manifests } = useQuery({
     queryKey: ['manifests'],
@@ -100,11 +141,6 @@ export default function ReportingPage() {
     return map
   }, [manifests])
 
-  const columns = useMemo(
-    () => makeColumns(manifestIdByName),
-    [manifestIdByName],
-  )
-
   const {
     page,
     setPage,
@@ -116,14 +152,47 @@ export default function ReportingPage() {
   } = usePaginatedListQuery<ClientMachineSummary>({
     queryKeyPrefix: ['reports-machines'],
     path: '/reports/machines',
-    filterKey: [search],
+    filterKey: [search, checkinFilterRaw],
     appendSearchParams: (params) => {
       if (search.trim()) params.set('search', search.trim())
+      for (const [key, value] of checkinFilterApiParams(checkinFilter)) {
+        params.set(key, value)
+      }
     },
   })
 
+  const columns = useMemo(
+    () =>
+      makeColumns(manifestIdByName, {
+        onNeverCheckinFilter: () => {
+          setCheckinFilter('never')
+          resetPage()
+        },
+        onInstallRowsFilter: (hostname, serial) => {
+          const q = hostname.trim() || serial.trim()
+          if (!q) return
+          navigate(`/reporting/installs?q=${encodeURIComponent(q)}`)
+        },
+      }),
+    [manifestIdByName, navigate, resetPage, setCheckinFilter],
+  )
+
+  const hasSheetFilters = checkinFilterIsActive(checkinFilterRaw)
+  const activeFilters = hasSheetFilters
+    ? [
+        {
+          id: 'checkin',
+          label: checkinFilterLabel(checkinFilter),
+          onRemove: () => {
+            void setCheckinFilter(null)
+            resetPage()
+          },
+        },
+      ]
+    : []
+
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col gap-6">
+    <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <div>
         <PageHeading
           icon={MonitorSmartphone}
@@ -132,18 +201,36 @@ export default function ReportingPage() {
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Search hostname or serial…"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value || null)
-            resetPage()
+      <PageFilters
+        isFiltered={hasSheetFilters}
+        activeFilterCount={checkinFilterActiveCount(checkinFilterRaw)}
+        activeFilters={activeFilters}
+        sheetDescription="Refine the device list."
+        onClear={() => {
+          setCheckinFilter(null)
+          resetPage()
+        }}
+        search={
+          <Input
+            placeholder="Search hostname or serial…"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value || null)
+              resetPage()
+            }}
+            className="max-w-sm"
+            aria-label="Search devices"
+          />
+        }
+      >
+        <CheckinFilterControl
+          value={checkinFilterRaw}
+          onChange={(next) => {
+            setCheckinFilter(next)
           }}
-          className="max-w-sm"
-          aria-label="Search devices"
+          onApply={resetPage}
         />
-      </div>
+      </PageFilters>
 
       <div className="min-h-0 flex-1">
         <DataTable

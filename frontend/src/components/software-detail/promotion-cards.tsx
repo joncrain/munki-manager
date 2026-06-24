@@ -29,13 +29,17 @@ import { cn } from '@/lib/utils'
 export function CatalogsPromotionCard({
   pkgId,
   canEdit,
+  editing,
   catalogNames,
+  onCatalogChange,
   autoPromote,
   promotionChannelId,
 }: {
   pkgId: string
   canEdit: boolean
+  editing: boolean
   catalogNames: string[]
+  onCatalogChange: (names: string[]) => void
   autoPromote: boolean
   promotionChannelId: string | null
 }) {
@@ -97,9 +101,9 @@ export function CatalogsPromotionCard({
       </CardHeader>
       <CardContent className="space-y-0">
         <CatalogEditor
-          pkgId={pkgId}
           catalogNames={catalogNames}
-          readOnly={!canEdit}
+          onChange={onCatalogChange}
+          readOnly={!canEdit || !editing}
         />
         {autoPromote && (
           <>

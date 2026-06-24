@@ -21,6 +21,7 @@ import { EntityAuditTrail } from '@/components/audit/entity-audit-trail'
 import { useAuth } from '@/components/auth-provider'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTable } from '@/components/data-table'
+import { JsonSnapshotDiff } from '@/components/json-snapshot-diff'
 import {
   LatestVersionBadge,
   VersionWithLatestBadge,
@@ -101,7 +102,7 @@ import { munkiAccents } from '@/lib/munki-accents'
 import { PAGE_KEYS } from '@/lib/page-keys'
 import { publicApiBaseUrl } from '@/lib/public-api-base'
 import {
-  buildUpdatePayload,
+  buildChangeSnapshots,
   type EditableFields,
   filterSharedPayload,
   pkgToEditable,
@@ -122,10 +123,20 @@ export default function SoftwareDetailPage() {
     string,
     unknown
   > | null>(null)
+  const [pendingSaveBefore, setPendingSaveBefore] = useState<Record<
+    string,
+    unknown
+  > | null>(null)
+  const [pendingSaveAfter, setPendingSaveAfter] = useState<Record<
+    string,
+    unknown
+  > | null>(null)
+  const [pendingCatalogChanged, setPendingCatalogChanged] = useState(false)
   const [clearMetadataCacheOnDelete, setClearMetadataCacheOnDelete] =
     useState(false)
   const clearCacheCheckboxId = useId()
   const [form, setForm] = useState<EditableFields | null>(null)
+  const [catalogNames, setCatalogNames] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
   const [iconRevision, setIconRevision] = useState(0)
   const [installReportPage, setInstallReportPage] = useState(1)
@@ -168,9 +179,12 @@ export default function SoftwareDetailPage() {
     () => (pendingSavePayload ? filterSharedPayload(pendingSavePayload) : null),
     [pendingSavePayload],
   )
-  const canApplyToAllVersions =
-    pendingSharedPayload !== null &&
-    Object.keys(pendingSharedPayload).length > 0
+  const canApplyToAllVersions = useMemo(() => {
+    const hasSharedFields =
+      pendingSharedPayload !== null &&
+      Object.keys(pendingSharedPayload).length > 0
+    return hasSharedFields || pendingCatalogChanged
+  }, [pendingSharedPayload, pendingCatalogChanged])
 
   useDocumentTitle(
     'Munki',
@@ -224,16 +238,31 @@ export default function SoftwareDetailPage() {
       payload,
       targetIds,
       versionSpecific,
+      catalogNames: nextCatalogNames,
+      catalogChanged,
     }: {
       payload: Record<string, unknown>
       targetIds: string[]
       versionSpecific?: Record<string, unknown>
+      catalogNames?: string[]
+      catalogChanged?: boolean
     }) => {
-      await Promise.all(
-        targetIds.map((vid) => api.put(`/pkginfo/${vid}`, payload)),
-      )
+      if (Object.keys(payload).length > 0) {
+        await Promise.all(
+          targetIds.map((vid) => api.put(`/pkginfo/${vid}`, payload)),
+        )
+      }
       if (versionSpecific && Object.keys(versionSpecific).length > 0) {
         await api.put(`/pkginfo/${id}`, versionSpecific)
+      }
+      if (catalogChanged && nextCatalogNames) {
+        await Promise.all(
+          targetIds.map((vid) =>
+            api.put(`/pkginfo/${vid}/catalogs`, {
+              catalog_names: nextCatalogNames,
+            }),
+          ),
+        )
       }
     },
     onSuccess: (_data, { targetIds }) => {
@@ -247,10 +276,14 @@ export default function SoftwareDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['pkginfo-item-meta'] })
       queryClient.invalidateQueries({ queryKey: ['pkginfo-display-labels'] })
       queryClient.invalidateQueries({ queryKey: ['pkginfo-plist-raw', id] })
+      queryClient.invalidateQueries({ queryKey: ['catalogs'] })
       setEditing(false)
       setDirty(false)
       setSaveDialogOpen(false)
       setPendingSavePayload(null)
+      setPendingSaveBefore(null)
+      setPendingSaveAfter(null)
+      setPendingCatalogChanged(false)
     },
     onError: (err: Error) => {
       toast.error(`Save failed: ${err.message}`)
@@ -292,7 +325,10 @@ export default function SoftwareDetailPage() {
   })
 
   useEffect(() => {
-    if (pkg && !form) setForm(pkgToEditable(pkg))
+    if (pkg && !form) {
+      setForm(pkgToEditable(pkg))
+      setCatalogNames(pkg.catalog_names)
+    }
   }, [pkg, form])
 
   // Reset editor state when navigating between versions of the same item.
@@ -300,8 +336,12 @@ export default function SoftwareDetailPage() {
     setEditing(false)
     setDirty(false)
     setForm(null)
+    setCatalogNames([])
     setSaveDialogOpen(false)
     setPendingSavePayload(null)
+    setPendingSaveBefore(null)
+    setPendingSaveAfter(null)
+    setPendingCatalogChanged(false)
   }, [])
 
   const handleBeforeUnload = useCallback(
@@ -324,35 +364,51 @@ export default function SoftwareDetailPage() {
     setDirty(true)
   }
 
+  const updateCatalogNames = (names: string[]) => {
+    setCatalogNames(names)
+    setDirty(true)
+  }
+
   const handleSave = () => {
     if (!form || !pkg) return
-    const payload = buildUpdatePayload(pkgToEditable(pkg), form)
-    if (Object.keys(payload).length === 0) {
+    const snapshots = buildChangeSnapshots(
+      pkgToEditable(pkg),
+      form,
+      pkg.catalog_names,
+      catalogNames,
+    )
+    if (!snapshots) {
       setEditing(false)
+      setDirty(false)
       return
     }
-    if (hasMultipleVersions) {
-      setPendingSavePayload(payload)
-      setSaveDialogOpen(true)
-      return
-    }
-    saveMutation.mutate({ payload, targetIds: [id] })
+    setPendingSavePayload(snapshots.payload)
+    setPendingSaveBefore(snapshots.before)
+    setPendingSaveAfter(snapshots.after)
+    setPendingCatalogChanged(snapshots.catalogChanged)
+    setSaveDialogOpen(true)
   }
 
   const handleSaveThisVersion = () => {
-    if (!pendingSavePayload) return
+    if (!pendingSavePayload && !pendingCatalogChanged) return
     saveMutation.mutate({
-      payload: pendingSavePayload,
+      payload: pendingSavePayload ?? {},
       targetIds: [id],
+      catalogNames,
+      catalogChanged: pendingCatalogChanged,
     })
   }
 
   const handleSaveAllVersions = () => {
-    if (!pendingSavePayload || !pendingSharedPayload) return
+    if (!canApplyToAllVersions) return
     saveMutation.mutate({
-      payload: pendingSharedPayload,
+      payload: pendingSharedPayload ?? {},
       targetIds: siblingVersions.map((v) => v.id),
-      versionSpecific: versionSpecificPayload(pendingSavePayload),
+      versionSpecific: pendingSavePayload
+        ? versionSpecificPayload(pendingSavePayload)
+        : undefined,
+      catalogNames,
+      catalogChanged: pendingCatalogChanged,
     })
   }
 
@@ -368,7 +424,10 @@ export default function SoftwareDetailPage() {
   }
 
   const handleCancel = () => {
-    if (pkg) setForm(pkgToEditable(pkg))
+    if (pkg) {
+      setForm(pkgToEditable(pkg))
+      setCatalogNames(pkg.catalog_names)
+    }
     setEditing(false)
     setDirty(false)
   }
@@ -546,48 +605,76 @@ export default function SoftwareDetailPage() {
         open={saveDialogOpen}
         onOpenChange={(open) => {
           setSaveDialogOpen(open)
-          if (!open) setPendingSavePayload(null)
+          if (!open) {
+            setPendingSavePayload(null)
+            setPendingSaveBefore(null)
+            setPendingSaveAfter(null)
+            setPendingCatalogChanged(false)
+          }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="flex max-h-[min(90vh,900px)] flex-col gap-4 overflow-hidden sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Save changes</DialogTitle>
+            <DialogTitle>Review changes</DialogTitle>
             <DialogDescription>
-              This item has {siblingVersions.length} versions. Choose whether to
-              update only{' '}
-              <span className="font-mono text-foreground">{pkg.version}</span>{' '}
-              or apply shared metadata to every version.
+              {hasMultipleVersions
+                ? `This item has ${siblingVersions.length} versions. Review the changes below, then choose whether to update only ${pkg.version} or apply shared metadata to every version.`
+                : 'Review the changes below before saving.'}
             </DialogDescription>
           </DialogHeader>
-          {!canApplyToAllVersions ? (
+          {pendingSaveBefore && pendingSaveAfter ? (
+            <JsonSnapshotDiff
+              before={pendingSaveBefore}
+              after={pendingSaveAfter}
+            />
+          ) : null}
+          {!canApplyToAllVersions && hasMultipleVersions ? (
             <p className="text-sm text-muted-foreground">
               Your changes are limited to installer or package fields for this
               version, so they can only be saved here.
             </p>
           ) : null}
           <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
-            <Button
-              type="button"
-              className="w-full"
-              onClick={handleSaveThisVersion}
-              disabled={saveMutation.isPending}
-            >
-              {saveMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Save className="h-4 w-4" aria-hidden />
-              )}
-              This version only ({pkg.version})
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              className="w-full"
-              onClick={handleSaveAllVersions}
-              disabled={saveMutation.isPending || !canApplyToAllVersions}
-            >
-              All {siblingVersions.length} versions
-            </Button>
+            {hasMultipleVersions ? (
+              <>
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={handleSaveThisVersion}
+                  disabled={saveMutation.isPending}
+                >
+                  {saveMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Save className="h-4 w-4" aria-hidden />
+                  )}
+                  This version only ({pkg.version})
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={handleSaveAllVersions}
+                  disabled={saveMutation.isPending || !canApplyToAllVersions}
+                >
+                  All {siblingVersions.length} versions
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                className="w-full"
+                onClick={handleSaveThisVersion}
+                disabled={saveMutation.isPending}
+              >
+                {saveMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Save className="h-4 w-4" aria-hidden />
+                )}
+                Confirm save
+              </Button>
+            )}
             <Button
               type="button"
               variant="ghost"
@@ -1022,7 +1109,9 @@ export default function SoftwareDetailPage() {
             <CatalogsPromotionCard
               pkgId={id}
               canEdit={canMutateSoftware}
-              catalogNames={pkg.catalog_names}
+              editing={effectiveEditing}
+              catalogNames={catalogNames}
+              onCatalogChange={updateCatalogNames}
               autoPromote={pkg.auto_promote ?? false}
               promotionChannelId={pkg.promotion_channel_id}
             />

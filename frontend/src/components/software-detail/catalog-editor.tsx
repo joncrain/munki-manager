@@ -1,42 +1,21 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { api, type CatalogRead } from '@/lib/api'
 import { parseCatalogListInput } from '@/lib/autopkg-recipe'
+import { catalogNameSetsEqual } from '@/lib/catalog-names'
 import { cn } from '@/lib/utils'
 
-function catalogNameSetsEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) {
-    return false
-  }
-  const sa = [...a]
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .sort()
-  const sb = [...b]
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .sort()
-  for (let i = 0; i < sa.length; i++) {
-    if (sa[i] !== sb[i]) {
-      return false
-    }
-  }
-  return true
-}
-
 export function CatalogEditor({
-  pkgId,
   catalogNames,
+  onChange,
   readOnly = false,
 }: {
-  pkgId: string
   catalogNames: string[]
+  onChange: (names: string[]) => void
   readOnly?: boolean
 }) {
-  const queryClient = useQueryClient()
   const [inputText, setInputText] = useState(() => catalogNames.join(', '))
 
   useEffect(() => {
@@ -58,20 +37,6 @@ export function CatalogEditor({
     [catalogNames, allCatalogs],
   )
 
-  const mutation = useMutation({
-    mutationFn: (names: string[]) =>
-      api.put(`/pkginfo/${pkgId}/catalogs`, { catalog_names: names }),
-    onSuccess: () => {
-      toast.success('Catalogs updated')
-      queryClient.invalidateQueries({ queryKey: ['pkginfo', pkgId] })
-      queryClient.invalidateQueries({ queryKey: ['catalogs'] })
-    },
-    onError: (err: Error) =>
-      toast.error(`Failed to update catalogs: ${err.message}`),
-  })
-
-  const pending = mutation.isPending
-
   const toggle = (name: string) => {
     if (readOnly) {
       return
@@ -79,7 +44,7 @@ export function CatalogEditor({
     const next = catalogNames.includes(name)
       ? catalogNames.filter((c) => c !== name)
       : [...catalogNames, name]
-    mutation.mutate(next)
+    onChange(next)
   }
 
   const applyInput = () => {
@@ -90,7 +55,7 @@ export function CatalogEditor({
     if (catalogNameSetsEqual(next, catalogNames)) {
       setInputText(catalogNames.join(', '))
     } else {
-      mutation.mutate(next)
+      onChange(next)
     }
   }
 
@@ -106,12 +71,9 @@ export function CatalogEditor({
                 variant={selected ? 'default' : 'outline'}
                 className={cn(
                   'text-sm',
-                  readOnly || pending ? undefined : 'cursor-pointer',
-                  pending && 'pointer-events-none opacity-60',
+                  readOnly ? undefined : 'cursor-pointer',
                 )}
-                onClick={
-                  readOnly || pending ? undefined : () => toggle(cat.name)
-                }
+                onClick={readOnly ? undefined : () => toggle(cat.name)}
               >
                 {cat.name}
               </Badge>
@@ -122,8 +84,8 @@ export function CatalogEditor({
       {unknownSelected.length > 0 && (
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
-            In pkginfo but not in the server catalog list (click to remove when
-            editing)
+            In pkginfo but not in the server catalog list
+            {readOnly ? '' : ' (click to remove when editing)'}
           </p>
           <div className="mb-2 flex flex-wrap gap-1">
             {unknownSelected.map((name) => (
@@ -132,10 +94,9 @@ export function CatalogEditor({
                 variant="default"
                 className={cn(
                   'text-sm',
-                  readOnly || pending ? undefined : 'cursor-pointer',
-                  pending && 'pointer-events-none opacity-60',
+                  readOnly ? undefined : 'cursor-pointer',
                 )}
-                onClick={readOnly || pending ? undefined : () => toggle(name)}
+                onClick={readOnly ? undefined : () => toggle(name)}
               >
                 {name}
               </Badge>
@@ -147,7 +108,6 @@ export function CatalogEditor({
         id="pkginfo-catalogs-input"
         value={inputText}
         readOnly={readOnly}
-        disabled={pending}
         onChange={
           readOnly
             ? undefined

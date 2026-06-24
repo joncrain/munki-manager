@@ -1,10 +1,4 @@
-import {
-  eachDayOfInterval,
-  format,
-  parseISO,
-  startOfDay,
-  subDays,
-} from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { useId, useMemo } from 'react'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import {
@@ -15,17 +9,11 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart'
-import type { AutoPkgRunRead } from '@/lib/api'
-
-const DAYS = 30
+import type { CheckinHistoryPoint } from '@/lib/api'
 
 const chartConfig = {
-  runs: {
-    label: 'Runs',
-    color: 'var(--gruvbox-blue)',
-  },
-  imported: {
-    label: 'Imported',
+  installed: {
+    label: 'Installed',
     color: 'var(--gruvbox-green)',
   },
   failed: {
@@ -34,63 +22,61 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
-const SERIES_KEYS = ['runs', 'imported', 'failed'] as const
+const SERIES_KEYS = ['installed', 'failed'] as const
 
 type ChartRow = {
   date: string
   shortLabel: string
-  runs: number
-  imported: number
+  installed: number
   failed: number
 }
 
-function buildRunActivity(runs: AutoPkgRunRead[]): ChartRow[] {
-  const end = startOfDay(new Date())
-  const start = subDays(end, DAYS - 1)
-  const keys = eachDayOfInterval({ start, end }).map((d) =>
-    format(d, 'yyyy-MM-dd'),
+function mergeInstallSeries(
+  installed: CheckinHistoryPoint[],
+  failed: CheckinHistoryPoint[],
+): ChartRow[] {
+  const installedByDate = new Map(
+    installed.map((point) => [point.date, point.count]),
   )
-  const dayData = new Map<
-    string,
-    { runs: number; imported: number; failed: number }
-  >()
-  for (const k of keys) {
-    dayData.set(k, { runs: 0, imported: 0, failed: 0 })
-  }
-  for (const run of runs) {
-    const k = format(parseISO(run.created_at), 'yyyy-MM-dd')
-    const entry = dayData.get(k)
-    if (!entry) continue
-    entry.runs += 1
-    entry.imported += run.recipes_imported ?? 0
-    entry.failed += run.recipes_failed ?? 0
-  }
-  return keys.map((date) => {
-    const values = dayData.get(date) ?? { runs: 0, imported: 0, failed: 0 }
-    return {
-      date,
-      shortLabel: format(parseISO(date), 'MMM d'),
-      ...values,
-    }
-  })
+  const failedByDate = new Map(failed.map((point) => [point.date, point.count]))
+  const dates = [
+    ...new Set([
+      ...installed.map((point) => point.date),
+      ...failed.map((point) => point.date),
+    ]),
+  ].sort()
+
+  return dates.map((date) => ({
+    date,
+    shortLabel: format(parseISO(date), 'MMM d'),
+    installed: installedByDate.get(date) ?? 0,
+    failed: failedByDate.get(date) ?? 0,
+  }))
 }
 
-export function AutoPkgRunsChart({ runs }: { runs: AutoPkgRunRead[] }) {
+export function FleetInstallRowsChart({
+  installedByDay,
+  failedByDay,
+}: {
+  installedByDay: CheckinHistoryPoint[]
+  failedByDay: CheckinHistoryPoint[]
+}) {
   const chartId = useId().replace(/:/g, '')
-  const chartData = useMemo(() => buildRunActivity(runs), [runs])
+  const chartData = useMemo(
+    () => mergeInstallSeries(installedByDay, failedByDay),
+    [installedByDay, failedByDay],
+  )
 
   const hasActivity = useMemo(
-    () =>
-      chartData.some(
-        (row) => row.runs > 0 || row.imported > 0 || row.failed > 0,
-      ),
+    () => chartData.some((row) => row.installed > 0 || row.failed > 0),
     [chartData],
   )
 
-  if (!runs.length || !hasActivity) {
+  if (!hasActivity) {
     return (
       <p className="text-sm text-muted-foreground">
-        No AutoPkg runs yet — activity will appear here after the first run.
+        No install report rows yet — they appear when clients send
+        ManagedInstallReport data.
       </p>
     )
   }
