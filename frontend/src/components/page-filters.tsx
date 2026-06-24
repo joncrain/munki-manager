@@ -4,6 +4,7 @@ import {
   ActiveFilterBadges,
   type ActiveFilterChip,
 } from '@/components/filter-badge'
+import { Label } from '@/components/ui/label'
 import {
   Sheet,
   SheetContent,
@@ -26,6 +27,37 @@ type PageFiltersProps = {
   trailing?: ReactNode
   className?: string
   sheetDescription?: string
+}
+
+export function FilterSheetField({
+  label,
+  hasValue = false,
+  onClear,
+  children,
+}: {
+  label: string
+  hasValue?: boolean
+  onClear?: () => void
+  children: ReactNode
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-sm font-medium">{label}</Label>
+        {hasValue && onClear ? (
+          <button
+            type="button"
+            className="rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label={`Clear ${label} filter`}
+            onClick={onClear}
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
+        ) : null}
+      </div>
+      {children}
+    </div>
+  )
 }
 
 function FilterSheetButton({

@@ -207,6 +207,13 @@ class GitHubRunContextUpdate(BaseModel):
     github_run_url: str
 
 
+class AutoPkgRunFailUpdate(BaseModel):
+    """Posted when the GitHub Actions job aborts before a normal ``/complete``."""
+
+    error_message: str
+    failed_step: str | None = None
+
+
 class AutoPkgRunRead(BaseModel):
     id: UUID
     status: str

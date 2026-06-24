@@ -79,10 +79,10 @@ def _local_runner_authenticated_path(path: str, method: str) -> bool:
     # Runner streams pkg/dmg bytes here; same Bearer model as the other ingest paths.
     if p.startswith("/api/v1/autopkg/runs/") and p.endswith("/pkgs") and method == "POST":
         return True
-    # Per-recipe results, run completion, and GitHub Actions context updates
-    # are runner-driven webhooks; they used to be on the public allowlist.
+    # Per-recipe results, run completion, workflow failure, and GitHub Actions context
+    # updates are runner-driven webhooks; they used to be on the public allowlist.
     if p.startswith("/api/v1/autopkg/runs/") and method == "POST":
-        if p.endswith("/results") or p.endswith("/complete") or p.endswith("/github-context"):
+        if p.endswith("/results") or p.endswith("/complete") or p.endswith("/fail") or p.endswith("/github-context"):
             return True
     return False
 

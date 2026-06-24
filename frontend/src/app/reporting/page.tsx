@@ -6,14 +6,14 @@ import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
 import { FilterBadge } from '@/components/filter-badge'
-import { PageFilters } from '@/components/page-filters'
+import { FilterSheetField, PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
 import {
   CheckinFilterControl,
   checkinFilterActiveCount,
   checkinFilterIsActive,
 } from '@/components/reporting/checkin-filter-control'
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/search-input'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import { usePaginatedListQuery } from '@/hooks/use-paginated-list-query'
 import { api, type ClientMachineSummary, type ManifestRead } from '@/lib/api'
@@ -211,25 +211,37 @@ export default function ReportingPage() {
           resetPage()
         }}
         search={
-          <Input
+          <SearchInput
             placeholder="Search hostname or serial…"
             value={search}
+            aria-label="Search devices"
             onChange={(e) => {
               setSearch(e.target.value || null)
               resetPage()
             }}
-            className="max-w-sm"
-            aria-label="Search devices"
+            onClear={() => {
+              setSearch(null)
+              resetPage()
+            }}
           />
         }
       >
-        <CheckinFilterControl
-          value={checkinFilterRaw}
-          onChange={(next) => {
-            setCheckinFilter(next)
+        <FilterSheetField
+          label="Check-in activity"
+          hasValue={checkinFilterIsActive(parseCheckinFilter(checkinFilterRaw))}
+          onClear={() => {
+            setCheckinFilter(null)
+            resetPage()
           }}
-          onApply={resetPage}
-        />
+        >
+          <CheckinFilterControl
+            value={checkinFilterRaw}
+            onChange={(next) => {
+              setCheckinFilter(next)
+            }}
+            onApply={resetPage}
+          />
+        </FilterSheetField>
       </PageFilters>
 
       <div className="min-h-0 flex-1">

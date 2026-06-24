@@ -7,6 +7,7 @@ import {
   Loader2,
   Play,
   Search,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 import { parseAsString, useQueryState } from 'nuqs'
@@ -474,9 +475,12 @@ export default function AutoPkgRunsPage() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
                   >
-                    View on GitHub
+                    View workflow on GitHub
                     <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                   </a>
+                ) : null}
+                {resultsRun?.error_message ? (
+                  <WorkflowFailureNotice message={resultsRun.error_message} />
                 ) : null}
               </div>
             </DialogDescription>
@@ -864,6 +868,27 @@ function TriggerRunDialog({
   )
 }
 
+function WorkflowFailureNotice({ message }: { message: string }) {
+  return (
+    <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-left">
+      <div className="flex items-start gap-2">
+        <TriangleAlert
+          className="mt-0.5 h-4 w-4 shrink-0 text-destructive"
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-destructive">
+            Workflow failure
+          </p>
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words font-sans text-xs text-foreground">
+            {message}
+          </pre>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function statusVariantResult(s: string) {
   switch (s) {
     case 'success':
@@ -899,7 +924,11 @@ function RunResultsScrollBody({ run }: { run: AutoPkgRunRead }) {
   if (!run?.results?.length) {
     return (
       <div className="max-h-[min(65vh,calc(85vh-9rem))] overflow-y-auto px-6 py-4">
-        <p className="text-muted-foreground text-sm">No results for this run</p>
+        <p className="text-muted-foreground text-sm">
+          {run.error_message
+            ? 'No per-recipe results were recorded.'
+            : 'No results for this run'}
+        </p>
       </div>
     )
   }
@@ -922,30 +951,37 @@ function RunResultsScrollBody({ run }: { run: AutoPkgRunRead }) {
           return (
             <div
               key={result.id}
-              className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between"
             >
-              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-                <Badge
-                  variant={statusVariantResult(result.status)}
-                  className="shrink-0"
-                >
-                  {result.status}
-                </Badge>
-                {link?.pkginfoId && isImported ? (
-                  <Link
-                    to={`/software/${link.pkginfoId}`}
-                    className="font-medium break-words text-primary underline-offset-4 hover:underline"
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                  <Badge
+                    variant={statusVariantResult(result.status)}
+                    className="shrink-0"
                   >
-                    {title}
-                  </Link>
-                ) : (
-                  <span className="font-medium break-words">{title}</span>
-                )}
-                {result.imported_version && (
-                  <span className="text-sm text-muted-foreground">
-                    v{result.imported_version}
-                  </span>
-                )}
+                    {result.status}
+                  </Badge>
+                  {link?.pkginfoId && isImported ? (
+                    <Link
+                      to={`/software/${link.pkginfoId}`}
+                      className="font-medium break-words text-primary underline-offset-4 hover:underline"
+                    >
+                      {title}
+                    </Link>
+                  ) : (
+                    <span className="font-medium break-words">{title}</span>
+                  )}
+                  {result.imported_version && (
+                    <span className="text-sm text-muted-foreground">
+                      v{result.imported_version}
+                    </span>
+                  )}
+                </div>
+                {result.error_message ? (
+                  <pre className="overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted px-2 py-1.5 font-sans text-xs text-foreground">
+                    {result.error_message}
+                  </pre>
+                ) : null}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Badge

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { RowSelectionState, VisibilityState } from '@tanstack/react-table'
 import { useAtom } from 'jotai'
-import { Package, Search, Tags, Trash2, Upload } from 'lucide-react'
+import { Package, Tags, Trash2, Upload } from 'lucide-react'
 import { parseAsString, useQueryState } from 'nuqs'
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -9,8 +9,9 @@ import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
-import { PageFilters } from '@/components/page-filters'
+import { FilterSheetField, PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
+import { SearchInput } from '@/components/search-input'
 import {
   makeSoftwareListColumns,
   softwareListDefaultColumnVisibility,
@@ -417,111 +418,144 @@ export default function SoftwarePage() {
           />
         }
         search={
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search software..."
-              value={search}
-              onChange={(e) => {
-                setListState((p) => ({
-                  ...p,
-                  search: e.target.value,
-                  page: 1,
-                }))
-              }}
-              className="pl-9"
-            />
-          </div>
-        }
-      >
-        <Select
-          value={category || '_all'}
-          onValueChange={(v) => {
-            setListState((p) => ({
-              ...p,
-              category: v === '_all' ? '' : v,
-              page: 1,
-            }))
-          }}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Categories</SelectItem>
-            {(categories ?? []).map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={catalog || '_all'}
-          onValueChange={(v) => {
-            setListState((p) => ({
-              ...p,
-              catalog: v === '_all' ? '' : v,
-              page: 1,
-            }))
-          }}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Catalog" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Catalogs</SelectItem>
-            {catalogs?.map((c) => (
-              <SelectItem key={c.id} value={c.name}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={deploymentStatus || '__all__'}
-          onValueChange={(v) => {
-            setListState((p) => ({
-              ...p,
-              deploymentStatus: v === '__all__' ? '' : v,
-              page: 1,
-            }))
-          }}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Deployment" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All Deployments</SelectItem>
-            <SelectItem value="fully_deployed">Fully deployed</SelectItem>
-            <SelectItem value="sharding">Sharding</SelectItem>
-            <SelectItem value="pending_rollout">Awaiting rollout</SelectItem>
-            <SelectItem value="paused">Paused</SelectItem>
-            <SelectItem value="not_in_production">Not in production</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
-          <Switch
-            id="software-latest-only"
-            checked={latestOnly}
-            onCheckedChange={(checked) => {
+          <SearchInput
+            placeholder="Search software..."
+            value={search}
+            onChange={(e) => {
               setListState((p) => ({
                 ...p,
-                latestOnly: checked,
+                search: e.target.value,
+                page: 1,
+              }))
+            }}
+            onClear={() => {
+              setListState((p) => ({
+                ...p,
+                search: '',
                 page: 1,
               }))
             }}
           />
-          <Label
-            htmlFor="software-latest-only"
-            className="cursor-pointer text-sm font-normal"
+        }
+      >
+        <FilterSheetField
+          label="Category"
+          hasValue={Boolean(category)}
+          onClear={() => setListState((p) => ({ ...p, category: '', page: 1 }))}
+        >
+          <Select
+            value={category || '_all'}
+            onValueChange={(v) => {
+              setListState((p) => ({
+                ...p,
+                category: v === '_all' ? '' : v,
+                page: 1,
+              }))
+            }}
           >
-            Latest only
-          </Label>
-        </div>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All Categories</SelectItem>
+              {(categories ?? []).map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
+
+        <FilterSheetField
+          label="Catalog"
+          hasValue={Boolean(catalog)}
+          onClear={() => setListState((p) => ({ ...p, catalog: '', page: 1 }))}
+        >
+          <Select
+            value={catalog || '_all'}
+            onValueChange={(v) => {
+              setListState((p) => ({
+                ...p,
+                catalog: v === '_all' ? '' : v,
+                page: 1,
+              }))
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Catalog" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All Catalogs</SelectItem>
+              {catalogs?.map((c) => (
+                <SelectItem key={c.id} value={c.name}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
+
+        <FilterSheetField
+          label="Deployment"
+          hasValue={Boolean(deploymentStatus)}
+          onClear={() =>
+            setListState((p) => ({ ...p, deploymentStatus: '', page: 1 }))
+          }
+        >
+          <Select
+            value={deploymentStatus || '__all__'}
+            onValueChange={(v) => {
+              setListState((p) => ({
+                ...p,
+                deploymentStatus: v === '__all__' ? '' : v,
+                page: 1,
+              }))
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Deployment" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All Deployments</SelectItem>
+              <SelectItem value="fully_deployed">Fully deployed</SelectItem>
+              <SelectItem value="sharding">Sharding</SelectItem>
+              <SelectItem value="pending_rollout">Awaiting rollout</SelectItem>
+              <SelectItem value="paused">Paused</SelectItem>
+              <SelectItem value="not_in_production">
+                Not in production
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
+
+        <FilterSheetField
+          label="Latest only"
+          hasValue={latestOnly}
+          onClear={() =>
+            setListState((p) => ({ ...p, latestOnly: false, page: 1 }))
+          }
+        >
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
+            <Switch
+              id="software-latest-only"
+              checked={latestOnly}
+              onCheckedChange={(checked) => {
+                setListState((p) => ({
+                  ...p,
+                  latestOnly: checked,
+                  page: 1,
+                }))
+              }}
+            />
+            <Label
+              htmlFor="software-latest-only"
+              className="cursor-pointer text-sm font-normal"
+            >
+              Show latest version only
+            </Label>
+          </div>
+        </FilterSheetField>
       </PageFilters>
 
       {selectedIds.length > 0 && (

@@ -179,6 +179,7 @@ The global default channel is set via `/workflow` (`default_promotion_channel_id
 | POST | `/autopkg/trust/resolve-commit` | Map trust SHA-256 file hashes to a GitHub commit URL (history walk) |
 | POST | `/autopkg/runs/verify-trust` | Pre-flight trust check before a run is enqueued |
 | POST | `/autopkg/runs/{id}/github-context` | Attach the dispatched workflow_run id/url to a run row |
+| POST | `/autopkg/runs/{id}/fail` | Mark a run failed when the GitHub Actions job aborts (`error_message`, optional `failed_step`) |
 | GET | `/autopkg/recipes/{id}/runner-override.plist` | Compiled override plist the runner consumes |
 | POST | `/autopkg/recipes/import-override` | Import an existing override plist (XML, base64 binary plist, YAML, or JSON) |
 | POST | `/autopkg/recipes/add-override` | Create an override from an `owner/repo` + recipe identifier in the cache |

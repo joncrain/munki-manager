@@ -7,16 +7,15 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Search,
   Star,
   Trash2,
-  X,
 } from 'lucide-react'
 import { parseAsString, useQueryState } from 'nuqs'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import { PageHeading } from '@/components/page-heading'
+import { SearchInput } from '@/components/search-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -205,26 +204,13 @@ export default function DiscoverRecipesPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search for recipes (e.g. Firefox, Unity, Chrome)..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value || null)}
-            className="pl-9"
-          />
-        </div>
-        {search && (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Clear search"
-            onClick={() => setSearch(null)}
-          >
-            <X className="h-4 w-4" />
-            Clear
-          </Button>
-        )}
+        <SearchInput
+          containerClassName="flex-1 max-w-md"
+          placeholder="Search for recipes (e.g. Firefox, Unity, Chrome)..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value || null)}
+          onClear={() => setSearch(null)}
+        />
         {searchFetching && (
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         )}
@@ -655,15 +641,13 @@ function RepoRecipesDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-6 py-4">
-          <div className="relative shrink-0">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Filter recipes..."
-              value={recipeSearch}
-              onChange={(e) => setRecipeSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+          <SearchInput
+            containerClassName="max-w-none shrink-0"
+            placeholder="Filter recipes..."
+            value={recipeSearch}
+            onChange={(e) => setRecipeSearch(e.target.value)}
+            onClear={() => setRecipeSearch('')}
+          />
 
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-md border p-2">
             {!hasCachedRecipes && isLoading ? (

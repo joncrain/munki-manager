@@ -1,7 +1,7 @@
 import { atomWithStorage } from 'jotai/utils'
 import type { SyncStorage } from 'jotai/vanilla/utils/atomWithStorage'
 
-const STORAGE_KEY = 'munki-manager-autopkg-recipes-page-list-v1'
+const STORAGE_KEY = 'munki-manager-autopkg-recipes-page-list-v2'
 
 export type AutopkgRecipesPageListState = {
   search: string
@@ -9,6 +9,10 @@ export type AutopkgRecipesPageListState = {
   enabled: string
   /** '' = all, or a trust status sent as trust_status to the API */
   trustStatus: string
+  /** '' = all, or last_run_status query value (including ``never``) */
+  lastRunStatus: string
+  /** '' = all, or a catalog name sent as catalog to the API */
+  catalog: string
   page: number
   pageSize: number
 }
@@ -17,6 +21,8 @@ export const defaultAutopkgRecipesPageListState: AutopkgRecipesPageListState = {
   search: '',
   enabled: '',
   trustStatus: '',
+  lastRunStatus: '',
+  catalog: '',
   page: 1,
   pageSize: 25,
 }
@@ -27,6 +33,16 @@ const TRUST_STATUS_VALUES = new Set([
   'failed',
   'pending_approval',
   'unknown',
+])
+
+const LAST_RUN_STATUS_VALUES = new Set([
+  '',
+  'success',
+  'imported',
+  'no_change',
+  'failed',
+  'trust_failed',
+  'never',
 ])
 
 function safeParseListState(
@@ -51,6 +67,13 @@ function safeParseListState(
     ) {
       out.trustStatus = o.trustStatus
     }
+    if (
+      typeof o.lastRunStatus === 'string' &&
+      LAST_RUN_STATUS_VALUES.has(o.lastRunStatus)
+    ) {
+      out.lastRunStatus = o.lastRunStatus
+    }
+    if (typeof o.catalog === 'string') out.catalog = o.catalog
     if (typeof o.page === 'number' && o.page >= 1) out.page = o.page
     if (typeof o.pageSize === 'number' && o.pageSize >= 1) {
       out.pageSize = o.pageSize

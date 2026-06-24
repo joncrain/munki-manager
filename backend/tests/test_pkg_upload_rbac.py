@@ -82,6 +82,7 @@ _RUN_ID = "00000000-0000-0000-0000-000000000000"
         "/api/v1/autopkg/icons/ingest",
         f"/api/v1/autopkg/runs/{_RUN_ID}/results",
         f"/api/v1/autopkg/runs/{_RUN_ID}/complete",
+        f"/api/v1/autopkg/runs/{_RUN_ID}/fail",
         f"/api/v1/autopkg/runs/{_RUN_ID}/github-context",
     ],
 )
@@ -99,6 +100,7 @@ def test_runner_ingest_endpoints_are_no_longer_public(path: str) -> None:
         "/api/v1/autopkg/icons/ingest",
         f"/api/v1/autopkg/runs/{_RUN_ID}/results",
         f"/api/v1/autopkg/runs/{_RUN_ID}/complete",
+        f"/api/v1/autopkg/runs/{_RUN_ID}/fail",
         f"/api/v1/autopkg/runs/{_RUN_ID}/github-context",
     ],
 )

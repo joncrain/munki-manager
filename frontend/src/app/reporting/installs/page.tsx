@@ -6,9 +6,9 @@ import { Link } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
 import { FilterBadge } from '@/components/filter-badge'
 import { VersionWithLatestBadge } from '@/components/latest-version-badge'
-import { PageFilters } from '@/components/page-filters'
+import { FilterSheetField, PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/search-input'
 import {
   Select,
   SelectContent,
@@ -274,37 +274,49 @@ export default function ReportingInstallsPage() {
           resetPage()
         }}
         search={
-          <Input
+          <SearchInput
             placeholder="Search item, hostname, or serial…"
             value={search}
+            aria-label="Search installs"
             onChange={(e) => {
               setSearch(e.target.value || null)
               resetPage()
             }}
-            className="max-w-sm"
-            aria-label="Search installs"
+            onClear={() => {
+              setSearch(null)
+              resetPage()
+            }}
           />
         }
       >
-        <Select
-          value={status || '_all'}
-          onValueChange={(v) => {
-            setStatus(v === '_all' ? null : v)
+        <FilterSheetField
+          label="Status"
+          hasValue={Boolean(status)}
+          onClear={() => {
+            setStatus(null)
             resetPage()
           }}
         >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All statuses</SelectItem>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Select
+            value={status || '_all'}
+            onValueChange={(v) => {
+              setStatus(v === '_all' ? null : v)
+              resetPage()
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All statuses</SelectItem>
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
       </PageFilters>
 
       <div className="min-h-0 flex-1">

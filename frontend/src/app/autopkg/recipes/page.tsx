@@ -7,7 +7,6 @@ import {
   FileUp,
   Loader2,
   Play,
-  Search,
   ShieldAlert,
   ShieldCheck,
 } from 'lucide-react'
@@ -16,13 +15,15 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
 import {
+  formatRecipeRunStatusLabel,
   recipeListColumns,
   recipeListDefaultColumnVisibility,
 } from '@/components/autopkg/recipe-list-columns'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
-import { PageFilters } from '@/components/page-filters'
+import { FilterSheetField, PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
+import { SearchInput } from '@/components/search-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -50,6 +51,7 @@ import type { PkginfoItemMeta } from '@/hooks/use-pkginfo-display-labels'
 import {
   type AutoPkgRecipeRead,
   api,
+  type CatalogRead,
   type PaginatedResponse,
   type TrustPendingCountResponse,
 } from '@/lib/api'
@@ -99,7 +101,15 @@ export default function RecipesPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [listState, setListState] = useAtom(autopkgRecipesPageListAtom)
-  const { search, enabled, trustStatus, page, pageSize } = listState
+  const {
+    search,
+    enabled,
+    trustStatus,
+    lastRunStatus,
+    catalog,
+    page,
+    pageSize,
+  } = listState
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     recipeListDefaultColumnVisibility,
@@ -150,7 +160,16 @@ export default function RecipesPage() {
   const [importRefreshTrust, setImportRefreshTrust] = useState(true)
 
   const { data: recipesPage, isLoading } = useQuery({
-    queryKey: ['autopkg-recipes', page, pageSize, search, enabled, trustStatus],
+    queryKey: [
+      'autopkg-recipes',
+      page,
+      pageSize,
+      search,
+      enabled,
+      trustStatus,
+      lastRunStatus,
+      catalog,
+    ],
     queryFn: () => {
       const params = new URLSearchParams()
       params.set('page', String(page))
@@ -168,10 +187,28 @@ export default function RecipesPage() {
       ) {
         params.set('trust_status', ts)
       }
+      const rs = lastRunStatus.trim()
+      if (
+        rs === 'success' ||
+        rs === 'imported' ||
+        rs === 'no_change' ||
+        rs === 'failed' ||
+        rs === 'trust_failed' ||
+        rs === 'never'
+      ) {
+        params.set('last_run_status', rs)
+      }
+      const cat = catalog.trim()
+      if (cat) params.set('catalog', cat)
       return api.get<PaginatedResponse<AutoPkgRecipeRead>>(
         `/autopkg/recipes?${params.toString()}`,
       )
     },
+  })
+
+  const { data: catalogs } = useQuery({
+    queryKey: ['catalogs'],
+    queryFn: () => api.get<CatalogRead[]>('/catalogs'),
   })
 
   const recipes = recipesPage?.items ?? []
@@ -405,6 +442,29 @@ export default function RecipesPage() {
     [updateMutation],
   )
 
+  const applyListFilter = useCallback(
+    (patch: Partial<typeof listState>) => {
+      setRowSelection({})
+      setListState((p) => ({ ...p, ...patch, page: 1 }))
+    },
+    [setListState],
+  )
+
+  const onCatalogFilter = useCallback(
+    (catalogName: string) => applyListFilter({ catalog: catalogName }),
+    [applyListFilter],
+  )
+
+  const onLastRunStatusFilter = useCallback(
+    (status: string) => applyListFilter({ lastRunStatus: status }),
+    [applyListFilter],
+  )
+
+  const onTrustStatusFilter = useCallback(
+    (status: string) => applyListFilter({ trustStatus: status }),
+    [applyListFilter],
+  )
+
   const columns = useMemo(
     () =>
       recipeListColumns(
@@ -422,6 +482,9 @@ export default function RecipesPage() {
           canEditRecipes,
           canRun,
           canVerifyTrust: canVerifyTrustBtn,
+          onCatalogFilter,
+          onLastRunStatusFilter,
+          onTrustStatusFilter,
         },
       ),
     [
@@ -437,11 +500,21 @@ export default function RecipesPage() {
       onToggleEnabled,
       onToggleAutoPromote,
       setQuickRun,
+      onCatalogFilter,
+      onLastRunStatusFilter,
+      onTrustStatusFilter,
     ],
   )
 
-  const hasSheetFilters = Boolean(enabled) || Boolean(trustStatus.trim())
-  const activeFilterCount = [enabled, trustStatus.trim()].filter(Boolean).length
+  const hasSheetFilters = Boolean(
+    enabled || trustStatus.trim() || lastRunStatus.trim() || catalog.trim(),
+  )
+  const activeFilterCount = [
+    enabled,
+    trustStatus.trim(),
+    lastRunStatus.trim(),
+    catalog.trim(),
+  ].filter(Boolean).length
   const activeFilters = [
     ...(enabled
       ? [
@@ -463,6 +536,34 @@ export default function RecipesPage() {
             onRemove: () => {
               setRowSelection({})
               setListState((p) => ({ ...p, trustStatus: '', page: 1 }))
+            },
+          },
+        ]
+      : []),
+    ...(lastRunStatus.trim()
+      ? [
+          {
+            id: 'lastRunStatus',
+            label: `Run result: ${
+              lastRunStatus === 'never'
+                ? 'Never run'
+                : formatRecipeRunStatusLabel(lastRunStatus)
+            }`,
+            onRemove: () => {
+              setRowSelection({})
+              setListState((p) => ({ ...p, lastRunStatus: '', page: 1 }))
+            },
+          },
+        ]
+      : []),
+    ...(catalog.trim()
+      ? [
+          {
+            id: 'catalog',
+            label: `Catalog: ${catalog}`,
+            onRemove: () => {
+              setRowSelection({})
+              setListState((p) => ({ ...p, catalog: '', page: 1 }))
             },
           },
         ]
@@ -582,6 +683,8 @@ export default function RecipesPage() {
             ...p,
             enabled: '',
             trustStatus: '',
+            lastRunStatus: '',
+            catalog: '',
             page: 1,
           }))
         }}
@@ -594,67 +697,124 @@ export default function RecipesPage() {
           />
         }
         search={
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search recipes..."
-              value={search}
-              onChange={(e) => {
-                setRowSelection({})
-                setListState((p) => ({
-                  ...p,
-                  search: e.target.value,
-                  page: 1,
-                }))
-              }}
-              className="pl-9"
-            />
-          </div>
+          <SearchInput
+            placeholder="Search recipes..."
+            value={search}
+            onChange={(e) => {
+              setRowSelection({})
+              setListState((p) => ({
+                ...p,
+                search: e.target.value,
+                page: 1,
+              }))
+            }}
+            onClear={() => {
+              setRowSelection({})
+              setListState((p) => ({
+                ...p,
+                search: '',
+                page: 1,
+              }))
+            }}
+          />
         }
       >
-        <Select
-          value={enabled || '_all'}
-          onValueChange={(v) => {
-            setRowSelection({})
-            setListState((p) => ({
-              ...p,
-              enabled: v === '_all' ? '' : v,
-              page: 1,
-            }))
-          }}
+        <FilterSheetField
+          label="Status"
+          hasValue={Boolean(enabled)}
+          onClear={() => applyListFilter({ enabled: '' })}
         >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Statuses</SelectItem>
-            <SelectItem value="true">Enabled</SelectItem>
-            <SelectItem value="false">Disabled</SelectItem>
-          </SelectContent>
-        </Select>
+          <Select
+            value={enabled || '_all'}
+            onValueChange={(v) => {
+              applyListFilter({ enabled: v === '_all' ? '' : v })
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All Statuses</SelectItem>
+              <SelectItem value="true">Enabled</SelectItem>
+              <SelectItem value="false">Disabled</SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
 
-        <Select
-          value={trustStatus.trim() || '_all'}
-          onValueChange={(v) => {
-            setRowSelection({})
-            setListState((p) => ({
-              ...p,
-              trustStatus: v === '_all' ? '' : v,
-              page: 1,
-            }))
-          }}
+        <FilterSheetField
+          label="Trust"
+          hasValue={Boolean(trustStatus.trim())}
+          onClear={() => applyListFilter({ trustStatus: '' })}
         >
-          <SelectTrigger className="w-full" aria-label="Filter by trust">
-            <SelectValue placeholder="Trust" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Trust</SelectItem>
-            <SelectItem value="verified">Verified</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="pending_approval">Pending</SelectItem>
-            <SelectItem value="unknown">Unknown</SelectItem>
-          </SelectContent>
-        </Select>
+          <Select
+            value={trustStatus.trim() || '_all'}
+            onValueChange={(v) => {
+              applyListFilter({ trustStatus: v === '_all' ? '' : v })
+            }}
+          >
+            <SelectTrigger className="w-full" aria-label="Filter by trust">
+              <SelectValue placeholder="Trust" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All Trust</SelectItem>
+              <SelectItem value="verified">Verified</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="pending_approval">Pending</SelectItem>
+              <SelectItem value="unknown">Unknown</SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
+
+        <FilterSheetField
+          label="Run result"
+          hasValue={Boolean(lastRunStatus.trim())}
+          onClear={() => applyListFilter({ lastRunStatus: '' })}
+        >
+          <Select
+            value={lastRunStatus.trim() || '_all'}
+            onValueChange={(v) => {
+              applyListFilter({ lastRunStatus: v === '_all' ? '' : v })
+            }}
+          >
+            <SelectTrigger className="w-full" aria-label="Filter by run result">
+              <SelectValue placeholder="Run result" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All run results</SelectItem>
+              <SelectItem value="success">Success</SelectItem>
+              <SelectItem value="imported">Imported</SelectItem>
+              <SelectItem value="no_change">No change</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="trust_failed">Trust failed</SelectItem>
+              <SelectItem value="never">Never run</SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
+
+        <FilterSheetField
+          label="Catalog"
+          hasValue={Boolean(catalog.trim())}
+          onClear={() => applyListFilter({ catalog: '' })}
+        >
+          <Select
+            value={catalog.trim() || '_all'}
+            onValueChange={(v) => {
+              applyListFilter({ catalog: v === '_all' ? '' : v })
+            }}
+          >
+            <SelectTrigger className="w-full" aria-label="Filter by catalog">
+              <SelectValue placeholder="Catalog" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All catalogs</SelectItem>
+              {(catalogs ?? []).map((c) => (
+                <SelectItem key={c.id} value={c.name}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
       </PageFilters>
 
       <div className="min-h-0 min-w-0 flex-1">

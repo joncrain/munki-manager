@@ -8,6 +8,7 @@ import {
   ShieldQuestion,
   Trash2,
 } from 'lucide-react'
+import { FilterBadge } from '@/components/filter-badge'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,49 +24,91 @@ import {
 import { canTriggerRunRecipe } from '@/lib/autopkg-run'
 import { formatDateTime } from '@/lib/format'
 
-function trustStatusBadge(status: string) {
-  switch (status) {
-    case 'verified':
-      return (
-        <Badge
-          variant="default"
-          className="bg-gruvbox-green text-primary-foreground hover:bg-gruvbox-green/90"
-        >
-          <ShieldCheck className="mr-1 h-3 w-3" />
-          Verified
-        </Badge>
-      )
-    case 'failed':
-      return (
-        <Badge variant="destructive">
-          <ShieldAlert className="mr-1 h-3 w-3" />
-          Failed
-        </Badge>
-      )
-    case 'pending_approval':
-      return (
-        <Badge
-          variant="default"
-          className="bg-gruvbox-yellow text-primary-foreground hover:bg-gruvbox-yellow/90"
-        >
-          <ShieldAlert className="mr-1 h-3 w-3" />
-          Pending
-        </Badge>
-      )
-    default:
-      return (
-        <Badge variant="secondary">
-          <ShieldQuestion className="mr-1 h-3 w-3" />
-          Unknown
-        </Badge>
-      )
+/** Human-readable AutoPkg run result label (no underscores). */
+export function formatRecipeRunStatusLabel(status: string): string {
+  return status
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+function trustStatusBadge(status: string, onFilter?: (status: string) => void) {
+  const content = (() => {
+    switch (status) {
+      case 'verified':
+        return (
+          <>
+            <ShieldCheck className="mr-1 h-3 w-3" />
+            Verified
+          </>
+        )
+      case 'failed':
+        return (
+          <>
+            <ShieldAlert className="mr-1 h-3 w-3" />
+            Failed
+          </>
+        )
+      case 'pending_approval':
+        return (
+          <>
+            <ShieldAlert className="mr-1 h-3 w-3" />
+            Pending
+          </>
+        )
+      default:
+        return (
+          <>
+            <ShieldQuestion className="mr-1 h-3 w-3" />
+            Unknown
+          </>
+        )
+    }
+  })()
+
+  const variant =
+    status === 'verified'
+      ? ('default' as const)
+      : status === 'failed'
+        ? ('destructive' as const)
+        : status === 'pending_approval'
+          ? ('default' as const)
+          : ('secondary' as const)
+
+  const className =
+    status === 'verified'
+      ? 'bg-gruvbox-green text-primary-foreground hover:bg-gruvbox-green/90'
+      : status === 'pending_approval'
+        ? 'bg-gruvbox-yellow text-primary-foreground hover:bg-gruvbox-yellow/90'
+        : undefined
+
+  if (onFilter) {
+    return (
+      <FilterBadge
+        variant={variant}
+        className={className}
+        onFilter={() => onFilter(status)}
+        ariaLabel={`Filter to trust status ${status.replace('_', ' ')}`}
+      >
+        {content}
+      </FilterBadge>
+    )
   }
+
+  return (
+    <Badge variant={variant} className={className}>
+      {content}
+    </Badge>
+  )
 }
 
 export interface RecipeListColumnOptions {
   canEditRecipes: boolean
   canRun: boolean
   canVerifyTrust: boolean
+  onCatalogFilter?: (catalog: string) => void
+  onLastRunStatusFilter?: (status: string) => void
+  onTrustStatusFilter?: (status: string) => void
 }
 
 export function recipeListColumns(
@@ -202,7 +245,10 @@ export function recipeListColumns(
         const isVerifying = verifyingTrustId === row.original.id
         return (
           <div className="flex items-center gap-1">
-            {trustStatusBadge(row.original.trust_status)}
+            {trustStatusBadge(
+              row.original.trust_status,
+              opts.onTrustStatusFilter,
+            )}
             {opts.canVerifyTrust && (
               <Button
                 variant="ghost"
@@ -265,11 +311,22 @@ export function recipeListColumns(
         if (cats.length === 0) return '—'
         return (
           <div className="flex flex-wrap gap-1">
-            {cats.map((c) => (
-              <Badge key={c} variant="secondary">
-                {c}
-              </Badge>
-            ))}
+            {cats.map((c) =>
+              opts.onCatalogFilter ? (
+                <FilterBadge
+                  key={c}
+                  variant="secondary"
+                  onFilter={() => opts.onCatalogFilter?.(c)}
+                  ariaLabel={`Filter to catalog ${c}`}
+                >
+                  {c}
+                </FilterBadge>
+              ) : (
+                <Badge key={c} variant="secondary">
+                  {c}
+                </Badge>
+              ),
+            )}
           </div>
         )
       },
@@ -280,8 +337,21 @@ export function recipeListColumns(
       cell: ({ row }) => {
         const st = row.original.last_run_status
         if (!st) return '—'
+        const label = formatRecipeRunStatusLabel(st)
         const ok = ['success', 'imported', 'no_change'].includes(st)
-        return <Badge variant={ok ? 'default' : 'destructive'}>{st}</Badge>
+        const variant = ok ? ('default' as const) : ('destructive' as const)
+        if (opts.onLastRunStatusFilter) {
+          return (
+            <FilterBadge
+              variant={variant}
+              onFilter={() => opts.onLastRunStatusFilter?.(st)}
+              ariaLabel={`Filter to run result ${label}`}
+            >
+              {label}
+            </FilterBadge>
+          )
+        }
+        return <Badge variant={variant}>{label}</Badge>
       },
     },
     {

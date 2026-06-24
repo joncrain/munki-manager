@@ -23,6 +23,7 @@ env:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   autopkg-run:
@@ -232,3 +233,62 @@ jobs:
             AutoPkg/Reports/*
             autopkg_runner.log
             metadata_cache.json
+
+      - name: Report workflow failure to API
+        if: failure() && github.event.inputs.run_id != '' && github.event.inputs.api_url != ''
+        env:
+          API_BASE_URL: ${{ env.BACKEND_URL }}
+          RUN_ID: ${{ github.event.inputs.run_id }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "${AUTOMUNKI_API_TOKEN:-}" ]; then
+            echo "::warning::Cannot report workflow failure — MUNKI_MANAGER_RUNNER_TOKEN is not set"
+            exit 0
+          fi
+
+          FAILED_STEP="unknown step"
+          if command -v gh >/dev/null 2>&1; then
+            STEP=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" \
+              --jq '.jobs[].steps[] | select(.conclusion=="failure") | .name' 2>/dev/null | head -1)
+            if [ -n "$STEP" ]; then
+              FAILED_STEP="$STEP"
+            fi
+          fi
+
+          LOG_SNIPPET=""
+          if [ -f autopkg_runner.log ]; then
+            LOG_SNIPPET=$(grep -Ei 'ERROR|error occurred|failed|Worker failed' autopkg_runner.log 2>/dev/null \
+              | tail -3 | tr '\n' ' ' | cut -c1-1500)
+          fi
+          if [ -z "$LOG_SNIPPET" ] && command -v gh >/dev/null 2>&1; then
+            LOG_SNIPPET=$(gh run view "${GITHUB_RUN_ID}" --log-failed 2>/dev/null \
+              | tail -15 | tr '\n' ' ' | cut -c1-1500)
+          fi
+
+          export FAILED_STEP LOG_SNIPPET GITHUB_RUN_URL
+          PAYLOAD=$(python3 <<'PY'
+          import json
+          import os
+
+          step = os.environ.get("FAILED_STEP", "unknown step")
+          snippet = os.environ.get("LOG_SNIPPET", "").strip()
+          url = os.environ["GITHUB_RUN_URL"]
+          parts = [f"Workflow step '{step}' failed."]
+          if snippet:
+              parts.append(snippet)
+          parts.append(f"Logs: {url}")
+          print(
+              json.dumps(
+                  {
+                      "failed_step": step,
+                      "error_message": " ".join(parts),
+                  }
+              )
+          )
+          PY
+          )
+
+          curl -sf -X POST "${API_BASE_URL}/api/v1/autopkg/runs/${RUN_ID}/fail" \
+            -H "Authorization: Bearer ${AUTOMUNKI_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"

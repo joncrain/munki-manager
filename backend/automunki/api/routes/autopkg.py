@@ -20,7 +20,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import String, and_, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -58,6 +58,7 @@ from automunki.schemas.autopkg import (
     AutoPkgRecipeImportOverrideRequest,
     AutoPkgRecipeRead,
     AutoPkgRecipeUpdate,
+    AutoPkgRunFailUpdate,
     AutoPkgRunRead,
     AutoPkgScheduleCreate,
     AutoPkgScheduleRead,
@@ -853,6 +854,48 @@ async def complete_run(
     return {"message": "Run completed", "run_id": str(run_id)}
 
 
+def _run_has_recipe_results(run: AutoPkgRun) -> bool:
+    return bool(run.results) or bool(run.total_recipes)
+
+
+@router.post("/runs/{run_id}/fail")
+async def fail_run(
+    run_id: uuid.UUID,
+    data: AutoPkgRunFailUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Called by the GitHub Actions runner when the workflow job fails."""
+    result = await session.execute(
+        select(AutoPkgRun).options(selectinload(AutoPkgRun.results)).where(AutoPkgRun.id == run_id)
+    )
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    message = str(data.error_message).strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="error_message is required")
+    if data.failed_step:
+        step = str(data.failed_step).strip()
+        if step and step not in message:
+            message = f"Workflow step '{step}' failed. {message}"
+
+    if run.status == RunStatus.failed:
+        if message and run.error_message != message:
+            run.error_message = message
+            await session.commit()
+        return {"message": "Run already failed", "run_id": str(run_id)}
+
+    if run.status == RunStatus.completed and _run_has_recipe_results(run):
+        return {"message": "Run already completed with results", "run_id": str(run_id)}
+
+    run.status = RunStatus.failed
+    run.error_message = message
+    run.completed_at = datetime.now(UTC)
+    await session.commit()
+    return {"message": "Run marked failed", "run_id": str(run_id)}
+
+
 def _recipe_input_dict(recipe: AutoPkgRecipe) -> dict | None:
     """Effective ``Input`` from ``input_variables`` merged with ``override_data.Input`` (override wins)."""
     m = merged_recipe_input(recipe)
@@ -1028,12 +1071,32 @@ def _enrich_recipe_read(
     )
 
 
+def _recipe_catalog_filter_clause(catalog_name: str):
+    """Recipes whose override ``Input.pkginfo.catalogs`` includes ``catalog_name``."""
+    name = catalog_name.strip()
+    if not name:
+        return None
+    od_catalogs = AutoPkgRecipe.override_data["Input"]["pkginfo"]["catalogs"]
+    iv_catalogs = AutoPkgRecipe.input_variables["pkginfo"]["catalogs"]
+    quoted = f'"{name}"'
+    return or_(
+        od_catalogs.contains([name]),
+        iv_catalogs.contains([name]),
+        cast(od_catalogs, String) == name,
+        cast(iv_catalogs, String) == name,
+        cast(od_catalogs, String).ilike(f"%{quoted}%"),
+        cast(iv_catalogs, String).ilike(f"%{quoted}%"),
+    )
+
+
 def _recipe_list_filter_clauses(
     *,
     enabled_only: bool,
     enabled: str | None,
     search: str | None,
     trust_status: TrustStatus | None = None,
+    last_run_status: str | None = None,
+    catalog: str | None = None,
 ) -> list:
     clauses: list = []
     if enabled_only:
@@ -1044,6 +1107,14 @@ def _recipe_list_filter_clauses(
         clauses.append(AutoPkgRecipe.is_enabled.is_(False))
     if trust_status is not None:
         clauses.append(AutoPkgRecipe.trust_status == trust_status.value)
+    if last_run_status:
+        if last_run_status == "never":
+            clauses.append(AutoPkgRecipe.last_run_status.is_(None))
+        else:
+            clauses.append(AutoPkgRecipe.last_run_status == last_run_status)
+    catalog_clause = _recipe_catalog_filter_clause(catalog or "")
+    if catalog_clause is not None:
+        clauses.append(catalog_clause)
     if search and search.strip():
         term = f"%{search.strip()}%"
         clauses.append(
@@ -1069,12 +1140,22 @@ async def list_recipes(
         None,
         description="Filter by trust status (verified, failed, pending_approval, unknown)",
     ),
+    last_run_status: str | None = Query(
+        None,
+        description="Filter by last run result (success, imported, no_change, failed, trust_failed, never)",
+    ),
+    catalog: str | None = Query(
+        None,
+        description="Filter by Munki catalog name in the recipe override pkginfo",
+    ),
 ):
     clauses = _recipe_list_filter_clauses(
         enabled_only=enabled_only,
         enabled=enabled,
         search=search,
         trust_status=trust_status,
+        last_run_status=last_run_status,
+        catalog=catalog,
     )
     count_stmt = select(func.count()).select_from(AutoPkgRecipe)
     if clauses:

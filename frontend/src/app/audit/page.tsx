@@ -1,12 +1,12 @@
-import { ClipboardList, Search } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import { parseAsString, useQueryState } from 'nuqs'
 import { useState } from 'react'
 import { AuditDetailDialog } from '@/components/audit/audit-detail-dialog'
 import { auditLogAdminColumns } from '@/components/audit/audit-log-columns'
 import { DataTable } from '@/components/data-table'
-import { PageFilters } from '@/components/page-filters'
+import { FilterSheetField, PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/search-input'
 import {
   Select,
   SelectContent,
@@ -140,59 +140,77 @@ export default function AuditPage() {
           resetPage()
         }}
         search={
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search entity or user..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                resetPage()
-              }}
-              className="pl-9"
-            />
-          </div>
+          <SearchInput
+            placeholder="Search entity or user..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              resetPage()
+            }}
+            onClear={() => {
+              setSearch('')
+              resetPage()
+            }}
+          />
         }
       >
-        <Select
-          value={action || '_all'}
-          onValueChange={(v) => {
-            setAction(v === '_all' ? null : v)
+        <FilterSheetField
+          label="Action"
+          hasValue={Boolean(action)}
+          onClear={() => {
+            setAction(null)
             resetPage()
           }}
         >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Action" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Actions</SelectItem>
-            {ACTION_OPTIONS.map((a) => (
-              <SelectItem key={a} value={a}>
-                {a}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Select
+            value={action || '_all'}
+            onValueChange={(v) => {
+              setAction(v === '_all' ? null : v)
+              resetPage()
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Action" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All Actions</SelectItem>
+              {ACTION_OPTIONS.map((a) => (
+                <SelectItem key={a} value={a}>
+                  {a}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
 
-        <Select
-          value={entityType || '_all'}
-          onValueChange={(v) => {
-            setEntityType(v === '_all' ? null : v)
+        <FilterSheetField
+          label="Entity type"
+          hasValue={Boolean(entityType)}
+          onClear={() => {
+            setEntityType(null)
             resetPage()
           }}
         >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Entity Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Entities</SelectItem>
-            {ENTITY_OPTIONS.map((e) => (
-              <SelectItem key={e} value={e}>
-                {e}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Select
+            value={entityType || '_all'}
+            onValueChange={(v) => {
+              setEntityType(v === '_all' ? null : v)
+              resetPage()
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Entity Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All Entities</SelectItem>
+              {ENTITY_OPTIONS.map((e) => (
+                <SelectItem key={e} value={e}>
+                  {e}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterSheetField>
       </PageFilters>
 
       <p className="text-xs text-muted-foreground">
