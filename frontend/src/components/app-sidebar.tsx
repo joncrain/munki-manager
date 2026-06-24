@@ -1,24 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import {
-  BookOpen,
-  CalendarClock,
-  CheckCircle,
-  ClipboardList,
-  Compass,
-  FileText,
-  FolderOpen,
-  LayoutDashboard,
-  ListChecks,
-  MonitorSmartphone,
-  Package,
-  Play,
-  Settings,
-  Shield,
-  Sparkles,
-} from 'lucide-react'
-import type { ComponentType } from 'react'
+import { Package } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/components/auth-provider'
+import { GlobalCommandPalette } from '@/components/global-command-palette'
 import { SidebarUserMenu } from '@/components/sidebar-user-menu'
 import {
   Sidebar,
@@ -35,133 +19,8 @@ import {
   SidebarRail,
 } from '@/components/ui/sidebar'
 import { api, type TrustPendingCountResponse } from '@/lib/api'
+import { navGroups } from '@/lib/nav-config'
 import { PAGE_KEYS } from '@/lib/page-keys'
-
-const navGroups: {
-  label: string
-  items: {
-    href: string
-    label: string
-    icon: ComponentType<{ className?: string }>
-    pageKey: string
-  }[]
-}[] = [
-  {
-    label: 'Overview',
-    items: [
-      {
-        href: '/',
-        label: 'Dashboard',
-        icon: LayoutDashboard,
-        pageKey: PAGE_KEYS.overview,
-      },
-    ],
-  },
-  {
-    label: 'Munki',
-    items: [
-      {
-        href: '/software',
-        label: 'Software',
-        icon: Package,
-        pageKey: PAGE_KEYS.munkiSoftware,
-      },
-      {
-        href: '/manifests',
-        label: 'Manifests',
-        icon: FileText,
-        pageKey: PAGE_KEYS.munkiManifests,
-      },
-      {
-        href: '/catalogs',
-        label: 'Catalogs',
-        icon: FolderOpen,
-        pageKey: PAGE_KEYS.munkiCatalogs,
-      },
-    ],
-  },
-  {
-    label: 'AutoPkg',
-    items: [
-      {
-        href: '/autopkg/runs',
-        label: 'Runs',
-        icon: Play,
-        pageKey: PAGE_KEYS.autopkgRuns,
-      },
-      {
-        href: '/autopkg/schedules',
-        label: 'Schedules',
-        icon: CalendarClock,
-        pageKey: PAGE_KEYS.autopkgRuns,
-      },
-      {
-        href: '/autopkg/recipes',
-        label: 'Recipes',
-        icon: BookOpen,
-        pageKey: PAGE_KEYS.autopkgRecipes,
-      },
-      {
-        href: '/autopkg/discover',
-        label: 'Discover',
-        icon: Compass,
-        pageKey: PAGE_KEYS.autopkgDiscover,
-      },
-      {
-        href: '/approvals',
-        label: 'Approvals',
-        icon: CheckCircle,
-        pageKey: PAGE_KEYS.autopkgApprovals,
-      },
-    ],
-  },
-  {
-    label: 'Reporting',
-    items: [
-      {
-        href: '/reporting',
-        label: 'Devices',
-        icon: MonitorSmartphone,
-        pageKey: PAGE_KEYS.reportingDevices,
-      },
-      {
-        href: '/reporting/installs',
-        label: 'Installs',
-        icon: ListChecks,
-        pageKey: PAGE_KEYS.reportingInstalls,
-      },
-    ],
-  },
-  {
-    label: 'Admin',
-    items: [
-      {
-        href: '/audit',
-        label: 'Audit Log',
-        icon: ClipboardList,
-        pageKey: PAGE_KEYS.adminAudit,
-      },
-      {
-        href: '/settings',
-        label: 'Settings',
-        icon: Settings,
-        pageKey: PAGE_KEYS.adminSettings,
-      },
-      {
-        href: '/admin/access',
-        label: 'Access',
-        icon: Shield,
-        pageKey: PAGE_KEYS.adminAccess,
-      },
-      {
-        href: '/admin/ai-insights',
-        label: 'AI Insights',
-        icon: Sparkles,
-        pageKey: PAGE_KEYS.adminAiInsights,
-      },
-    ],
-  },
-]
 
 function navItemIsActive(
   pathname: string,
@@ -229,6 +88,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
+        <GlobalCommandPalette />
         {navGroups.map((group) => {
           const visibleItems = group.items.filter((item) =>
             showItem(item.pageKey),

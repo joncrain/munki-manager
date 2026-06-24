@@ -148,15 +148,6 @@ export default function ReportingPage() {
           accent="reporting"
           title="Devices"
         />
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Reporting: Macs that have checked in via the Munki Manager agent or
-          Munki postflight client. Install rows reflect the latest payload from
-          each check-in (
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">
-            ManagedInstallReport
-          </code>
-          ).
-        </p>
       </div>
 
       {/* <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

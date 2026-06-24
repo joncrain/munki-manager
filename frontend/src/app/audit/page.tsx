@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ClipboardList, X } from 'lucide-react'
+import { ClipboardList, Search, X } from 'lucide-react'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
 import { useState } from 'react'
 import { AuditDetailDialog } from '@/components/audit/audit-detail-dialog'
@@ -7,6 +7,7 @@ import { auditLogAdminColumns } from '@/components/audit/audit-log-columns'
 import { DataTable } from '@/components/data-table'
 import { PageHeading } from '@/components/page-heading'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -18,21 +19,45 @@ import { useDocumentTitle } from '@/hooks/use-document-title'
 import { type AuditLogRead, api, type PaginatedResponse } from '@/lib/api'
 
 const ACTION_OPTIONS = [
-  'create',
-  'update',
-  'delete',
-  'promote',
   'approve',
-  'reject',
+  'approve_trust',
+  'create',
+  'create_override',
+  'delete',
   'import',
+  'import_override',
+  'insights_query',
+  'makecatalogs',
+  'promote',
+  'reject',
+  'reject_trust',
+  'repo_update',
+  'scheduled_run',
+  'shard_complete',
+  'shard_override',
+  'shard_pause',
+  'shard_start',
+  'software.direct_upload',
+  'trigger_run',
+  'update',
+  'update_trust',
+  'verify_trust',
+  'verify_trust_before_run',
 ]
 
 const ENTITY_OPTIONS = [
-  'pkg_info',
-  'manifest',
-  'catalog',
+  'autopkg_recipe',
   'autopkg_run',
+  'autopkg_run_result',
+  'autopkg_system',
+  'catalog',
+  'insights',
+  'manifest',
+  'pkg_info',
+  'pkginfo',
+  'promotion_channel',
   'repository',
+  'workflow_preferences',
 ]
 
 export default function AuditPage() {
@@ -51,28 +76,47 @@ export default function AuditPage() {
     'entityType',
     parseAsString.withDefault(''),
   )
+  const [search, setSearch] = useQueryState(
+    'search',
+    parseAsString.withDefault(''),
+  )
 
   const { data, isLoading } = useQuery({
-    queryKey: ['audit', page, pageSize, action, entityType],
+    queryKey: ['audit', page, pageSize, action, entityType, search],
     queryFn: () => {
       const params = new URLSearchParams()
       params.set('page', String(page))
       params.set('page_size', String(pageSize))
       if (action) params.set('action', action)
       if (entityType) params.set('entity_type', entityType)
+      const trimmedSearch = search.trim()
+      if (trimmedSearch) params.set('search', trimmedSearch)
       return api.get<PaginatedResponse<AuditLogRead>>(
         `/audit?${params.toString()}`,
       )
     },
   })
 
-  const hasFilters = action || entityType
+  const hasFilters = action || entityType || search
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <PageHeading icon={ClipboardList} accent="audit" title="Audit Log" />
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search entity or user..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
+            className="pl-9"
+          />
+        </div>
+
         <Select
           value={action || '_all'}
           onValueChange={(v) => {
@@ -121,6 +165,7 @@ export default function AuditPage() {
             onClick={() => {
               setAction(null)
               setEntityType(null)
+              setSearch(null)
               setPage(1)
             }}
           >

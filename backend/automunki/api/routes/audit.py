@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from automunki.api.deps import get_session
@@ -39,6 +39,7 @@ async def list_audit_logs(
     entity_type: str | None = None,
     action: str | None = None,
     user_email: str | None = None,
+    search: str | None = None,
 ):
     query = select(AuditLog)
 
@@ -48,6 +49,15 @@ async def list_audit_logs(
         query = query.where(AuditLog.action == action)
     if user_email:
         query = query.where(AuditLog.user_email == user_email)
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                AuditLog.entity_name.ilike(term),
+                AuditLog.entity_id.ilike(term),
+                AuditLog.user_email.ilike(term),
+            )
+        )
 
     count = (await session.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
 
