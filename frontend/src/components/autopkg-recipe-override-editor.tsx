@@ -20,18 +20,11 @@ import { parse as plistParse } from 'plist'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { EntityAuditTrail } from '@/components/audit/entity-audit-trail'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -960,36 +953,21 @@ export function RecipeOverrideEditor({
 
   return (
     <>
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete override</DialogTitle>
-            <DialogDescription>
-              This will permanently delete{' '}
-              <span className="font-medium text-foreground">{recipe.name}</span>{' '}
-              and remove it from the recipe list. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-              disabled={deleteMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={confirmDeleteOverride}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Delete override"
+        description={
+          <>
+            This will permanently delete{' '}
+            <span className="font-medium text-foreground">{recipe.name}</span>{' '}
+            and remove it from the recipe list. This cannot be undone.
+          </>
+        }
+        pendingLabel="Deleting…"
+        isPending={deleteMutation.isPending}
+        onConfirm={confirmDeleteOverride}
+      />
 
       <Tabs defaultValue="general" className="gap-4">
         <TabsList
@@ -1376,13 +1354,10 @@ export function RecipeOverrideEditor({
             </Button>
           </div>
           {rawPlistLoading ? (
-            <div
-              className="raw-data-viewport flex items-center justify-center gap-2 rounded-md border text-muted-foreground"
-              role="status"
-            >
+            <output className="raw-data-viewport flex items-center justify-center gap-2 rounded-md border text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
               Loading…
-            </div>
+            </output>
           ) : rawPlistError ? (
             <p className="text-sm text-destructive">
               {rawPlistErr instanceof Error
@@ -1421,13 +1396,10 @@ export function RecipeOverrideEditor({
             </Button>
           </div>
           {rawPlistLoading ? (
-            <div
-              className="raw-data-viewport flex items-center justify-center gap-2 rounded-md border text-muted-foreground"
-              role="status"
-            >
+            <output className="raw-data-viewport flex items-center justify-center gap-2 rounded-md border text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
               Loading…
-            </div>
+            </output>
           ) : rawPlistError ? (
             <p className="text-sm text-destructive">
               {rawPlistErr instanceof Error

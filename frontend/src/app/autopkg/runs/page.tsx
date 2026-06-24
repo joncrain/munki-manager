@@ -9,7 +9,7 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { parseAsString, useQueryState } from 'nuqs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useDocumentTitle } from '@/hooks/use-document-title'
+import { usePaginatedListQuery } from '@/hooks/use-paginated-list-query'
 import {
   installReportLinkKey,
   usePkginfoLinksForInstallReports,
@@ -48,7 +49,6 @@ import {
   type AutoPkgRunRead,
   type AutoPkgScheduleRead,
   api,
-  type PaginatedResponse,
   type UiSettingsRead,
 } from '@/lib/api'
 import { fetchEnabledAutopkgRecipes } from '@/lib/autopkg-recipes-api'
@@ -102,11 +102,6 @@ export default function AutoPkgRunsPage() {
   const [trustVerifying, setTrustVerifying] = useState(false)
   const [trustContinuePending, setTrustContinuePending] = useState(false)
 
-  const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
-  const [pageSize, setPageSize] = useQueryState(
-    'pageSize',
-    parseAsInteger.withDefault(20),
-  )
   const [status, setStatus] = useQueryState(
     'status',
     parseAsString.withDefault(''),
@@ -119,20 +114,30 @@ export default function AutoPkgRunsPage() {
 
   const { data: resultsRun, isLoading: resultsRunLoading } = useQuery({
     queryKey: ['autopkg-run', resultsRunId],
-    queryFn: () => api.get<AutoPkgRunRead>(`/autopkg/runs/${resultsRunId!}`),
+    queryFn: () => {
+      if (!resultsRunId) {
+        throw new Error('resultsRunId is required')
+      }
+      return api.get<AutoPkgRunRead>(`/autopkg/runs/${resultsRunId}`)
+    },
     enabled: !!resultsRunId,
   })
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['autopkg-runs', page, pageSize, status],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      params.set('page', String(page))
-      params.set('page_size', String(pageSize))
+  const {
+    page,
+    setPage,
+    pageSize,
+    resetPage,
+    onPageSizeChange,
+    data,
+    isLoading,
+  } = usePaginatedListQuery<AutoPkgRunRead>({
+    queryKeyPrefix: ['autopkg-runs'],
+    path: '/autopkg/runs',
+    defaultPageSize: 20,
+    filterKey: [status],
+    appendSearchParams: (params) => {
       if (status) params.set('status', status)
-      return api.get<PaginatedResponse<AutoPkgRunRead>>(
-        `/autopkg/runs?${params.toString()}`,
-      )
     },
   })
 
@@ -383,7 +388,7 @@ export default function AutoPkgRunsPage() {
           value={status || '_all'}
           onValueChange={(v) => {
             setStatus(v === '_all' ? null : v)
-            setPage(1)
+            resetPage()
           }}
         >
           <SelectTrigger className="w-[150px]">
@@ -406,7 +411,7 @@ export default function AutoPkgRunsPage() {
             aria-label="Clear filters"
             onClick={() => {
               setStatus(null)
-              setPage(1)
+              resetPage()
             }}
           >
             <X className="h-4 w-4" />
@@ -424,10 +429,7 @@ export default function AutoPkgRunsPage() {
           pageSize={pageSize}
           total={data?.total}
           onPageChange={setPage}
-          onPageSizeChange={(size) => {
-            setPageSize(size)
-            setPage(1)
-          }}
+          onPageSizeChange={onPageSizeChange}
           isLoading={isLoading}
         />
       </div>

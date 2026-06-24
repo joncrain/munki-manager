@@ -68,7 +68,7 @@ export default function RecipeOverrideEditPage() {
     setToolbar(null)
     setEditing(false)
     setEditorKey((k) => k + 1)
-  }, [id])
+  }, [])
 
   useEffect(() => {
     if (!canEditRecipes) {

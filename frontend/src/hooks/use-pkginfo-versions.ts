@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
 import { api, type PaginatedResponse, type PkgInfoSummary } from '@/lib/api'
 import { sortByLooseVersion } from '@/lib/loose-version'
 

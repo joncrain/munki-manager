@@ -110,6 +110,7 @@ from automunki.services.autopkg_schedule import (
     fire_due_schedules,
     schedule_next_for_row,
 )
+from automunki.services.pkginfo_audit import fetch_pkg_catalog_names
 from automunki.services.promotion import run_all_auto_promotions
 from automunki.services.recipe_input_merge import (
     merged_recipe_input,
@@ -2069,13 +2070,12 @@ async def approve_result(
         pkg = await _resolve_pkg_for_pending_import_result(session, result)
         if pkg is not None and pkg.pending_catalog_names:
             if approved:
-                before_catalogs = [c.name for c in pkg.catalogs]
+                before_catalogs = await fetch_pkg_catalog_names(session, pkg.id)
                 await session.execute(delete(PkgInfoCatalog).where(PkgInfoCatalog.pkg_info_id == pkg.id))
                 await _assign_pkginfo_catalogs_by_name(session, pkg.id, list(pkg.pending_catalog_names))
                 pkg.pending_catalog_names = None
                 await session.flush()
-                await session.refresh(pkg, attribute_names=["catalogs"])
-                after_catalogs = [c.name for c in pkg.catalogs]
+                after_catalogs = await fetch_pkg_catalog_names(session, pkg.id)
                 await create_audit_entry(
                     session,
                     action="promote",
@@ -2084,12 +2084,13 @@ async def approve_result(
                     entity_name=f"{pkg.name} {pkg.version}",
                     user_id=user.id if user else None,
                     user_email=user.email if user else None,
-                    before_snapshot={"catalogs": before_catalogs},
-                    after_snapshot={"catalogs": after_catalogs},
+                    before_snapshot={"catalog_names": before_catalogs},
+                    after_snapshot={"catalog_names": after_catalogs},
+                    changes={"catalog_names": {"before": before_catalogs, "after": after_catalogs}},
                     notes="Released from quarantine after import approval",
                 )
             else:
-                before_catalogs = [c.name for c in pkg.catalogs]
+                before_catalogs = await fetch_pkg_catalog_names(session, pkg.id)
                 await session.execute(delete(PkgInfoCatalog).where(PkgInfoCatalog.pkg_info_id == pkg.id))
                 pkg.pending_catalog_names = None
                 pkg.is_deleted = True
@@ -2101,8 +2102,12 @@ async def approve_result(
                     entity_name=f"{pkg.name} {pkg.version}",
                     user_id=user.id if user else None,
                     user_email=user.email if user else None,
-                    before_snapshot={"catalogs": before_catalogs, "is_deleted": False},
-                    after_snapshot={"catalogs": [], "is_deleted": True},
+                    before_snapshot={"catalog_names": before_catalogs, "is_deleted": False},
+                    after_snapshot={"catalog_names": [], "is_deleted": True},
+                    changes={
+                        "catalog_names": {"before": before_catalogs, "after": []},
+                        "is_deleted": {"before": False, "after": True},
+                    },
                     notes="Import approval rejected; pkginfo marked deleted",
                 )
 

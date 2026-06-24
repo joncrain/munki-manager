@@ -21,6 +21,7 @@ from automunki.models.munki import (
     PromotionStrategy,
 )
 from automunki.services.audit import create_audit_entry
+from automunki.services.pkginfo_audit import fetch_pkg_catalog_names
 from automunki.services.recipe_input_merge import merged_recipe_input
 from automunki.services.shard_rollout import maybe_init_shard_after_catalog_change
 
@@ -61,7 +62,7 @@ async def promote_pkginfo(
     if existing.scalar_one_or_none():
         return True
 
-    before_catalogs = [c.name for c in pkg.catalogs]
+    before_catalogs = await fetch_pkg_catalog_names(session, pkg_info_id)
 
     session.add(
         PkgInfoCatalog(
@@ -72,11 +73,11 @@ async def promote_pkginfo(
     )
 
     await session.flush()
-    pkg_sync = (
-        await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_info_id))
-    ).scalar_one()
-
-    after_catalogs = [c.name for c in pkg_sync.catalogs]
+    after_catalogs = await fetch_pkg_catalog_names(session, pkg_info_id)
+    changes = {
+        "catalog_names": {"before": before_catalogs, "after": after_catalogs},
+        "target_catalog": target_catalog.name,
+    }
     await create_audit_entry(
         session,
         action="promote",
@@ -85,8 +86,9 @@ async def promote_pkginfo(
         entity_name=f"{pkg.name} {pkg.version}",
         user_id=user_id,
         user_email=user_email,
-        before_snapshot={"catalogs": before_catalogs},
-        after_snapshot={"catalogs": after_catalogs},
+        before_snapshot={"catalog_names": before_catalogs},
+        after_snapshot={"catalog_names": after_catalogs},
+        changes=changes,
         notes=f"Promoted to {target_catalog.name}",
     )
 

@@ -36,7 +36,7 @@ export function SoftwareIcon({
 
   useEffect(() => {
     setImgFailed(false)
-  }, [candidateName, cacheRevision])
+  }, [])
   const alt = displayName || name
   const sizeClass = sizeClasses[size]
 

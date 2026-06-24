@@ -1,6 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
-import { type AuditLogRead } from '@/lib/api'
+import type { AuditLogRead } from '@/lib/api'
 import { auditActionVariant } from '@/lib/audit-display'
 import { formatDateTime } from '@/lib/format'
 

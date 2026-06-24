@@ -5,16 +5,8 @@ import {
   startOfDay,
   subDays,
 } from 'date-fns'
-import { useMemo } from 'react'
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { useId, useMemo } from 'react'
+import { FleetTimeseriesChart } from '@/components/dashboard/fleet-timeseries-chart'
 import type { AutoPkgRunRead } from '@/lib/api'
 
 const DAYS = 30
@@ -33,85 +25,21 @@ function buildSeries(runs: AutoPkgRunRead[]) {
   }
   return keys.map((date) => ({
     date,
-    shortLabel: format(parseISO(date), 'MMM d'),
-    runs: counts.get(date) ?? 0,
+    count: counts.get(date) ?? 0,
   }))
 }
 
 export function AutoPkgRunsChart({ runs }: { runs: AutoPkgRunRead[] }) {
-  const data = useMemo(() => buildSeries(runs), [runs])
-
-  if (!runs.length) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No AutoPkg runs yet — activity will appear here after the first run.
-      </p>
-    )
-  }
+  const gradientId = useId().replace(/:/g, '')
+  const points = useMemo(() => buildSeries(runs), [runs])
 
   return (
-    <div className="h-[220px] w-full min-w-0">
-      <ResponsiveContainer
-        width="100%"
-        height="100%"
-        minWidth={0}
-        initialDimension={{ width: 1, height: 220 }}
-      >
-        <AreaChart
-          data={data}
-          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-        >
-          <defs>
-            <linearGradient id="fillAutopkgRuns" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.35} />
-              <stop
-                offset="95%"
-                stopColor="var(--chart-2)"
-                stopOpacity={0.02}
-              />
-            </linearGradient>
-          </defs>
-          <CartesianGrid
-            strokeDasharray="3 3"
-            vertical={false}
-            className="stroke-border/60"
-          />
-          <XAxis
-            dataKey="shortLabel"
-            tickLine={false}
-            axisLine={false}
-            tickMargin={8}
-            minTickGap={16}
-            className="text-[11px] fill-muted-foreground"
-          />
-          <YAxis
-            tickLine={false}
-            axisLine={false}
-            width={28}
-            allowDecimals={false}
-            className="text-[11px] fill-muted-foreground"
-          />
-          <Tooltip
-            contentStyle={{
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--card)',
-            }}
-            labelFormatter={(_, payload) => {
-              const row = payload?.[0]?.payload as { date?: string } | undefined
-              return row?.date ? format(parseISO(row.date), 'MMM d, yyyy') : ''
-            }}
-            formatter={(value) => [Number(value ?? 0), 'Runs']}
-          />
-          <Area
-            type="monotone"
-            dataKey="runs"
-            stroke="var(--chart-2)"
-            fill="url(#fillAutopkgRuns)"
-            strokeWidth={2}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
+    <FleetTimeseriesChart
+      points={points}
+      seriesLabel="Runs"
+      gradientId={gradientId}
+      strokeVar="var(--chart-2)"
+      emptyMessage="No AutoPkg runs yet — activity will appear here after the first run."
+    />
   )
 }

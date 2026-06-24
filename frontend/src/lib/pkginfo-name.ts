@@ -12,7 +12,7 @@ const INSTALLER_EXT = /\.(pkg|mpkg|dmg|zip)$/i
 // Match the backend's ``_VERSION_TAIL_RE``: ``-`` *or* ``_`` followed by a
 // digit (because ``_slug`` turns whitespace into underscore, so
 // ``"Slack 4.36"`` → ``"Slack_4.36"`` and we still want to strip ``_4.36``).
-const VERSION_TAIL = /[-_]\d[\w.\-]*$/
+const VERSION_TAIL = /[-_]\d[\w.-]*$/
 
 function slug(input: string): string {
   // Match Python's ``re.sub(r"[^\w.\-]+", "_", ..., flags=re.UNICODE)`` plus
@@ -22,8 +22,8 @@ function slug(input: string): string {
   // anything that isn't a word char, dot, or hyphen.
   const cleaned = input
     .trim()
-    .replace(/[^\p{L}\p{N}_.\-]+/gu, '_')
-    .replace(/^[._\-]+|[._\-]+$/g, '')
+    .replace(/[^\p{L}\p{N}_.-]+/gu, '_')
+    .replace(/^[._-]+|[._-]+$/g, '')
   return cleaned || 'uploaded'
 }
 
@@ -46,6 +46,6 @@ export function deriveAutoName(opts: {
   // hit the backend), so we only run the heuristic ``-<digit>...`` strip
   // here. The backend will additionally do an exact-version-suffix strip if
   // parsing succeeds, which is a strict subset of what the heuristic catches.
-  const trimmed = base.replace(VERSION_TAIL, '').replace(/[._\-]+$/, '')
+  const trimmed = base.replace(VERSION_TAIL, '').replace(/[._-]+$/, '')
   return trimmed || base
 }

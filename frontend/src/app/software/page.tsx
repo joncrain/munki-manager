@@ -1,21 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type {
-  ColumnDef,
-  RowSelectionState,
-  VisibilityState,
-} from '@tanstack/react-table'
+import type { RowSelectionState, VisibilityState } from '@tanstack/react-table'
 import { useAtom } from 'jotai'
 import { Package, Search, Tags, Trash2, Upload } from 'lucide-react'
 import { useEffect, useId, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
-import { DeploymentStatusBadge } from '@/components/deployment-status-badge'
-import { VersionWithLatestBadge } from '@/components/latest-version-badge'
 import { PageFilters } from '@/components/page-filters'
 import { PageHeading } from '@/components/page-heading'
-import { SoftwareIcon } from '@/components/software-icon'
+import {
+  softwareListColumns,
+  softwareListDefaultColumnVisibility,
+} from '@/components/software/software-list-columns'
 import { SoftwareUploadDialog } from '@/components/software-upload-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,195 +45,9 @@ import {
   type PkgInfoSummary,
 } from '@/lib/api'
 import { softwarePageListAtom } from '@/lib/atoms/software-page-list'
-import { formatDate } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
 import { PAGE_KEYS } from '@/lib/page-keys'
 import { cn } from '@/lib/utils'
-
-const columns: ColumnDef<PkgInfoSummary>[] = [
-  {
-    accessorKey: 'display_name',
-    header: 'Name',
-    cell: ({ row }) => (
-      <Link
-        to={`/software/${row.original.id}`}
-        className="flex items-center gap-3 font-medium hover:underline"
-      >
-        <SoftwareIcon
-          name={row.original.name}
-          displayName={row.original.display_name}
-          size="sm"
-        />
-        <span className="truncate">
-          {row.original.display_name || row.original.name}
-        </span>
-        {row.original.pending_metadata && (
-          <Badge
-            variant="outline"
-            className="ml-1 shrink-0 border-amber-500 text-amber-600"
-            title="Uploaded manually — finish entering version / receipts before promoting."
-          >
-            Manual
-          </Badge>
-        )}
-      </Link>
-    ),
-    enableHiding: false,
-  },
-  {
-    accessorKey: 'version',
-    header: 'Version',
-    cell: ({ row }) => (
-      <VersionWithLatestBadge
-        version={row.original.version}
-        isLatest={row.original.is_latest}
-      />
-    ),
-  },
-  {
-    accessorKey: 'category',
-    header: 'Category',
-    cell: ({ row }) =>
-      row.original.category ? (
-        <Badge variant="outline">{row.original.category}</Badge>
-      ) : null,
-  },
-  {
-    accessorKey: 'install_count',
-    header: 'Installs',
-    cell: ({ row }) => (
-      <span className="tabular-nums text-sm">
-        {row.original.install_count ?? 0}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'failed_install_count',
-    header: 'Failed',
-    cell: ({ row }) => {
-      const count = row.original.failed_install_count ?? 0
-      return (
-        <span
-          className={cn(
-            'tabular-nums text-sm',
-            count > 0 && 'font-medium text-destructive',
-          )}
-        >
-          {count}
-        </span>
-      )
-    },
-  },
-  {
-    accessorKey: 'developer',
-    header: 'Developer',
-    cell: ({ row }) => (
-      <span className="truncate text-sm">{row.original.developer}</span>
-    ),
-  },
-  {
-    accessorKey: 'catalog_names',
-    header: 'Catalogs',
-    enableSorting: false,
-    cell: ({ row }) => (
-      <div className="flex gap-1">
-        {row.original.catalog_names.map((c) => (
-          <Badge key={c} variant="secondary">
-            {c}
-          </Badge>
-        ))}
-      </div>
-    ),
-  },
-  {
-    accessorKey: 'deployment_status',
-    header: 'Deployment',
-    enableSorting: false,
-    cell: ({ row }) => (
-      <DeploymentStatusBadge
-        deploymentStatus={row.original.deployment_status ?? 'not_in_production'}
-        shardPercent={row.original.shard_percent ?? null}
-        isFirstProductionDeploy={row.original.is_first_production_deploy}
-        inManifest={row.original.in_manifest}
-      />
-    ),
-  },
-  {
-    accessorKey: 'minimum_os_version',
-    header: 'Min OS',
-    cell: ({ row }) => (
-      <span className="font-mono text-sm text-muted-foreground">
-        {row.original.minimum_os_version ?? '—'}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'installer_type',
-    header: 'Installer Type',
-    cell: ({ row }) =>
-      row.original.installer_type ? (
-        <Badge variant="outline">{row.original.installer_type}</Badge>
-      ) : (
-        <span className="text-sm text-muted-foreground">—</span>
-      ),
-  },
-  {
-    accessorKey: 'unattended_install',
-    header: 'Unattended',
-    cell: ({ row }) => (
-      <Badge variant={row.original.unattended_install ? 'default' : 'outline'}>
-        {row.original.unattended_install ? 'Yes' : 'No'}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: 'unattended_uninstall',
-    header: 'Unattended Uninstall',
-    cell: ({ row }) => (
-      <Badge
-        variant={row.original.unattended_uninstall ? 'default' : 'outline'}
-      >
-        {row.original.unattended_uninstall ? 'Yes' : 'No'}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: 'restart_action',
-    header: 'Restart Action',
-    cell: ({ row }) =>
-      row.original.restart_action ? (
-        <Badge variant="secondary">{row.original.restart_action}</Badge>
-      ) : (
-        <span className="text-sm text-muted-foreground">—</span>
-      ),
-  },
-  {
-    accessorKey: 'updated_at',
-    header: 'Updated',
-    cell: ({ row }) => (
-      <span suppressHydrationWarning className="text-sm text-muted-foreground">
-        {formatDate(row.original.updated_at)}
-      </span>
-    ),
-  },
-]
-
-const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
-  display_name: true,
-  version: true,
-  category: true,
-  install_count: true,
-  failed_install_count: true,
-  developer: false,
-  catalog_names: true,
-  deployment_status: true,
-  minimum_os_version: false,
-  installer_type: false,
-  unattended_install: false,
-  unattended_uninstall: false,
-  restart_action: false,
-  updated_at: true,
-}
 
 export default function SoftwarePage() {
   const { canWrite } = useAuth()
@@ -256,7 +67,7 @@ export default function SoftwarePage() {
     sorting,
   } = listState
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
-    DEFAULT_COLUMN_VISIBILITY,
+    softwareListDefaultColumnVisibility,
   )
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
@@ -398,7 +209,7 @@ export default function SoftwarePage() {
     queryFn: () => api.get<string[]>('/pkginfo/categories'),
   })
 
-  const hasFilters = search || category || catalog || deploymentStatus
+  const hasFilters = Boolean(search || category || catalog || deploymentStatus)
   const activeFilterCount = [
     search,
     category,
@@ -443,7 +254,7 @@ export default function SoftwarePage() {
         }}
         trailing={
           <ColumnVisibilityMenu
-            columns={columns}
+            columns={softwareListColumns}
             columnVisibility={columnVisibility}
             onColumnVisibilityChange={setColumnVisibility}
           />
@@ -677,32 +488,37 @@ export default function SoftwarePage() {
             {(catalogs ?? [])
               .slice()
               .sort((a, b) => a.name.localeCompare(b.name))
-              .map((cat) => (
-                <label
-                  key={cat.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-1.5 hover:bg-muted/60"
-                >
-                  <Checkbox
-                    checked={bulkCatalogNames.includes(cat.name)}
-                    onCheckedChange={(v) => {
-                      const on = !!v
-                      setBulkCatalogNames((prev) =>
-                        on
-                          ? prev.includes(cat.name)
-                            ? prev
-                            : [...prev, cat.name]
-                          : prev.filter((n) => n !== cat.name),
-                      )
-                    }}
-                  />
-                  <span className="text-sm">{cat.name}</span>
-                  {cat.is_production && (
-                    <Badge variant="secondary" className="ml-auto text-xs">
-                      Production
-                    </Badge>
-                  )}
-                </label>
-              ))}
+              .map((cat) => {
+                const checkboxId = `bulk-catalog-${cat.id}`
+                return (
+                  <label
+                    key={cat.id}
+                    htmlFor={checkboxId}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-1.5 hover:bg-muted/60"
+                  >
+                    <Checkbox
+                      id={checkboxId}
+                      checked={bulkCatalogNames.includes(cat.name)}
+                      onCheckedChange={(v) => {
+                        const on = !!v
+                        setBulkCatalogNames((prev) =>
+                          on
+                            ? prev.includes(cat.name)
+                              ? prev
+                              : [...prev, cat.name]
+                            : prev.filter((n) => n !== cat.name),
+                        )
+                      }}
+                    />
+                    <span className="text-sm">{cat.name}</span>
+                    {cat.is_production && (
+                      <Badge variant="secondary" className="ml-auto text-xs">
+                        Production
+                      </Badge>
+                    )}
+                  </label>
+                )
+              })}
           </div>
           <DialogFooter>
             <Button
@@ -728,70 +544,52 @@ export default function SoftwarePage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={(open) => {
           setDeleteDialogOpen(open)
           if (!open) setClearMetadataCacheOnBulkDelete(false)
         }}
+        title="Remove from software catalog"
+        description={
+          selectedIds.length === 1
+            ? 'This marks the item as deleted and removes it from Munki catalogs. Clients will no longer see it as an optional install from those catalogs.'
+            : `This marks ${selectedIds.length} items as deleted and removes them from Munki catalogs. Clients will no longer see them as optional installs from those catalogs.`
+        }
+        confirmLabel="Remove"
+        pendingLabel="Removing…"
+        isPending={deleteMutation.isPending}
+        onConfirm={() =>
+          deleteMutation.mutate({
+            ids: selectedIds,
+            clearCache: clearMetadataCacheOnBulkDelete,
+          })
+        }
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove from software catalog</DialogTitle>
-            <DialogDescription>
-              {selectedIds.length === 1
-                ? 'This marks the item as deleted and removes it from Munki catalogs. Clients will no longer see it as an optional install from those catalogs.'
-                : `This marks ${selectedIds.length} items as deleted and removes them from Munki catalogs. Clients will no longer see them as optional installs from those catalogs.`}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-start gap-2 rounded-md border p-3">
-            <Checkbox
-              id={clearBulkCacheCheckboxId}
-              checked={clearMetadataCacheOnBulkDelete}
-              onCheckedChange={(c) => setClearMetadataCacheOnBulkDelete(!!c)}
-              disabled={deleteMutation.isPending}
-            />
-            <label
-              htmlFor={clearBulkCacheCheckboxId}
-              className="cursor-pointer text-left text-sm leading-tight"
-            >
-              <span className="font-medium">Also clear metadata cache</span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                Lets the next cloud/local AutoPkg run re-notice these recipes
-                instead of reporting no change. Only applies to items that were
-                imported with a recipe identifier.
-              </span>
-            </label>
-          </div>
-          <DialogFooter className="gap-2 sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-              disabled={deleteMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() =>
-                deleteMutation.mutate({
-                  ids: selectedIds,
-                  clearCache: clearMetadataCacheOnBulkDelete,
-                })
-              }
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? 'Removing…' : 'Remove'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <div className="flex items-start gap-2 rounded-md border p-3">
+          <Checkbox
+            id={clearBulkCacheCheckboxId}
+            checked={clearMetadataCacheOnBulkDelete}
+            onCheckedChange={(c) => setClearMetadataCacheOnBulkDelete(!!c)}
+            disabled={deleteMutation.isPending}
+          />
+          <label
+            htmlFor={clearBulkCacheCheckboxId}
+            className="cursor-pointer text-left text-sm leading-tight"
+          >
+            <span className="font-medium">Also clear metadata cache</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Lets the next cloud/local AutoPkg run re-notice these recipes
+              instead of reporting no change. Only applies to items that were
+              imported with a recipe identifier.
+            </span>
+          </label>
+        </div>
+      </ConfirmDialog>
 
       <div className="min-h-0 flex-1">
         <DataTable
-          columns={columns}
+          columns={softwareListColumns}
           data={data?.items ?? []}
           pageCount={data?.total_pages ?? 1}
           page={page}
@@ -808,7 +606,7 @@ export default function SoftwarePage() {
           onSortingChange={(next) => {
             setListState((p) => ({ ...p, sorting: next, page: 1 }))
           }}
-          defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
+          defaultColumnVisibility={softwareListDefaultColumnVisibility}
           columnVisibility={columnVisibility}
           onColumnVisibilityChange={setColumnVisibility}
           hideColumnPicker

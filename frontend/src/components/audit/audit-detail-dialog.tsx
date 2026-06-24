@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { type AuditLogRead } from '@/lib/api'
+import type { AuditLogRead } from '@/lib/api'
 import { auditActionVariant, formatAuditJson } from '@/lib/audit-display'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -32,13 +32,14 @@ const auditDetailTabTrigger = (activeRing: string) =>
 
 function AuditDiffLegend({ className }: { className?: string }) {
   return (
-    <div
+    <fieldset
       className={cn(
+        'm-0 min-w-0 border-0 p-0',
         'flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground',
         className,
       )}
-      aria-label="Diff color legend"
     >
+      <legend className="sr-only">Diff color legend</legend>
       <span className="inline-flex items-center gap-1.5">
         <span
           className="size-3 shrink-0 rounded-sm border border-red-600/40 bg-red-500/30"
@@ -60,7 +61,7 @@ function AuditDiffLegend({ className }: { className?: string }) {
         />
         Modified
       </span>
-    </div>
+    </fieldset>
   )
 }
 

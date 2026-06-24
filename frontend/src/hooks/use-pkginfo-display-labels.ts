@@ -6,10 +6,7 @@ import { parseManifestItemRef } from '@/lib/manifest-item-ref'
 
 /** Resolve manifest item refs (incl. pinned `name-version`) to pkginfo display_name. */
 export function usePkginfoDisplayLabels(names: string[]) {
-  const uniqueRaw = useMemo(
-    () => [...new Set(names)].sort(),
-    [names.join('\0')],
-  )
+  const uniqueRaw = useMemo(() => [...new Set(names)].sort(), [names])
 
   const uniqueBases = useMemo(() => {
     const s = new Set<string>()
@@ -17,7 +14,7 @@ export function usePkginfoDisplayLabels(names: string[]) {
       s.add(parseManifestItemRef(raw).baseName)
     }
     return [...s].sort()
-  }, [uniqueRaw.join('\0')])
+  }, [uniqueRaw])
 
   return useQuery({
     queryKey: ['pkginfo-display-labels', uniqueRaw.join('\0')],
@@ -127,10 +124,7 @@ export interface PkginfoItemMeta {
 
 /** Resolve item keys to pkginfo ``display_name`` and ``icon_name`` (detail fetch per base). */
 export function usePkginfoItemMeta(names: string[]) {
-  const uniqueRaw = useMemo(
-    () => [...new Set(names)].sort(),
-    [names.join('\0')],
-  )
+  const uniqueRaw = useMemo(() => [...new Set(names)].sort(), [names])
 
   const uniqueBases = useMemo(() => {
     const s = new Set<string>()
@@ -138,7 +132,7 @@ export function usePkginfoItemMeta(names: string[]) {
       s.add(parseManifestItemRef(raw).baseName)
     }
     return [...s].sort()
-  }, [uniqueRaw.join('\0')])
+  }, [uniqueRaw])
 
   return useQuery({
     queryKey: ['pkginfo-item-meta', uniqueRaw.join('\0')],

@@ -3,6 +3,7 @@ import { Loader2, Save, Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { EnrollmentTokensCard } from '@/components/enrollment-tokens-card'
 import { PageHeading } from '@/components/page-heading'
+import { SettingsFormCard } from '@/components/settings-form-card'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -74,11 +75,9 @@ function MunkiRepoBasicAuthCard() {
   }
 
   return (
-    <Card className="sm:col-span-1">
-      <CardHeader>
-        <CardTitle>Munki repository (clients)</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <SettingsFormCard
+      title="Munki repository (clients)"
+      description={
         <p className="text-sm text-muted-foreground">
           Require HTTP Basic authentication for{' '}
           <code className="text-xs">/repo</code> (catalogs, manifests,
@@ -93,112 +92,107 @@ function MunkiRepoBasicAuthCard() {
           </a>
           , not the web UI JWT.
         </p>
-
-        {isPending ? (
-          <Skeleton className="h-40 w-full" />
-        ) : isError ? (
-          <p className="text-sm text-destructive">
-            {error instanceof Error ? error.message : 'Failed to load'}
+      }
+      isPending={isPending}
+      isError={isError}
+      error={error}
+    >
+      {envLocked ? (
+        <div className="space-y-2 rounded-md border border-border bg-muted/40 p-4 text-sm">
+          <p>
+            Basic auth is active via{' '}
+            <code className="text-xs">MUNKI_REPO_BASIC_AUTH_USER</code> and{' '}
+            <code className="text-xs">MUNKI_REPO_BASIC_AUTH_PASSWORD</code> on
+            the API server (overrides the database).
           </p>
-        ) : envLocked ? (
-          <div className="space-y-2 rounded-md border border-border bg-muted/40 p-4 text-sm">
-            <p>
-              Basic auth is active via{' '}
-              <code className="text-xs">MUNKI_REPO_BASIC_AUTH_USER</code> and{' '}
-              <code className="text-xs">MUNKI_REPO_BASIC_AUTH_PASSWORD</code> on
-              the API server (overrides the database).
-            </p>
-            <p className="text-muted-foreground">
-              Username in use:{' '}
-              <span className="font-medium text-foreground">
-                {data?.username ?? ''}
-              </span>
+          <p className="text-muted-foreground">
+            Username in use:{' '}
+            <span className="font-medium text-foreground">
+              {data?.username ?? ''}
+            </span>
+          </p>
+        </div>
+      ) : (
+        <form className="space-y-4" onSubmit={onSubmit}>
+          <div className="flex flex-row items-center justify-between gap-4 rounded-lg border border-border p-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="repo-basic-enabled">Require Basic auth</Label>
+              <p className="text-sm text-muted-foreground">
+                When on, clients must send a valid username and password for{' '}
+                <code className="text-xs">/repo</code>.
+              </p>
+            </div>
+            <Switch
+              checked={enabled}
+              id="repo-basic-enabled"
+              onCheckedChange={setEnabled}
+            />
+          </div>
+          <div className="grid gap-2 sm:max-w-md">
+            <Label htmlFor="repo-basic-user">Username</Label>
+            <Input
+              autoComplete="off"
+              id="repo-basic-user"
+              onChange={(e) => setUsername(e.target.value)}
+              value={username}
+            />
+          </div>
+          <div className="grid gap-2 sm:max-w-md">
+            <Label htmlFor="repo-basic-pass">New password</Label>
+            <Input
+              autoComplete="new-password"
+              id="repo-basic-pass"
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={
+                enabled
+                  ? 'Required when first enabling'
+                  : 'Leave blank to keep stored password'
+              }
+              type="password"
+              value={password}
+            />
+            <p className="text-xs text-muted-foreground">
+              Omit to keep the current password. Set when enabling for the first
+              time or to rotate.
             </p>
           </div>
-        ) : (
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <div className="flex flex-row items-center justify-between gap-4 rounded-lg border border-border p-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="repo-basic-enabled">Require Basic auth</Label>
-                <p className="text-sm text-muted-foreground">
-                  When on, clients must send a valid username and password for{' '}
-                  <code className="text-xs">/repo</code>.
-                </p>
-              </div>
-              <Switch
-                checked={enabled}
-                id="repo-basic-enabled"
-                onCheckedChange={setEnabled}
-              />
+          {mutation.isError && (
+            <p className="text-sm text-destructive">
+              {mutation.error instanceof Error
+                ? mutation.error.message
+                : 'Save failed'}
+            </p>
+          )}
+          {oneTimeHeader && (
+            <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
+              <p className="font-medium">Copy for ManagedInstalls (one-time)</p>
+              <code className="block break-all rounded bg-muted px-2 py-1.5 text-xs">
+                {oneTimeHeader}
+              </code>
+              <Button
+                className="mt-1"
+                onClick={() => {
+                  void navigator.clipboard.writeText(oneTimeHeader)
+                }}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                Copy header line
+              </Button>
             </div>
-            <div className="grid gap-2 sm:max-w-md">
-              <Label htmlFor="repo-basic-user">Username</Label>
-              <Input
-                autoComplete="off"
-                id="repo-basic-user"
-                onChange={(e) => setUsername(e.target.value)}
-                value={username}
-              />
-            </div>
-            <div className="grid gap-2 sm:max-w-md">
-              <Label htmlFor="repo-basic-pass">New password</Label>
-              <Input
-                autoComplete="new-password"
-                id="repo-basic-pass"
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={
-                  enabled
-                    ? 'Required when first enabling'
-                    : 'Leave blank to keep stored password'
-                }
-                type="password"
-                value={password}
-              />
-              <p className="text-xs text-muted-foreground">
-                Omit to keep the current password. Set when enabling for the
-                first time or to rotate.
-              </p>
-            </div>
-            {mutation.isError && (
-              <p className="text-sm text-destructive">
-                {mutation.error instanceof Error
-                  ? mutation.error.message
-                  : 'Save failed'}
-              </p>
+          )}
+          <Button disabled={mutation.isPending} type="submit">
+            {mutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <Save className="h-4 w-4" aria-hidden />
             )}
-            {oneTimeHeader && (
-              <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
-                <p className="font-medium">
-                  Copy for ManagedInstalls (one-time)
-                </p>
-                <code className="block break-all rounded bg-muted px-2 py-1.5 text-xs">
-                  {oneTimeHeader}
-                </code>
-                <Button
-                  className="mt-1"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(oneTimeHeader)
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="secondary"
-                >
-                  Copy header line
-                </Button>
-              </div>
-            )}
-            <Button disabled={mutation.isPending} type="submit">
-              {mutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Save className="h-4 w-4" aria-hidden />
-              )}
-              {mutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </form>
-        )}
-      </CardContent>
-    </Card>
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </form>
+      )}
+    </SettingsFormCard>
   )
 }
 
@@ -247,11 +241,9 @@ function MunkiRepoUrlsCard() {
   }
 
   return (
-    <Card className="sm:col-span-1">
-      <CardHeader>
-        <CardTitle>Package &amp; client resource URLs</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <SettingsFormCard
+      title="Package & client resource URLs"
+      description={
         <p className="text-sm text-muted-foreground">
           Enrolled clients fetch packages and client resources <em>directly</em>{' '}
           from these URLs. Catalogs, manifests, and icons still come from this
@@ -262,98 +254,94 @@ function MunkiRepoUrlsCard() {
           <code className="text-xs">ClientResourceURL</code> prefs &mdash;
           existing clients keep their current settings until re-enrolled.
         </p>
-
-        {isPending ? (
-          <Skeleton className="h-48 w-full" />
-        ) : isError ? (
-          <p className="text-sm text-destructive">
-            {error instanceof Error ? error.message : 'Failed to load'}
-          </p>
-        ) : (
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <div className="grid gap-2 sm:max-w-xl">
-              <Label htmlFor="repo-pkg-url">PackageURL</Label>
-              <Input
-                autoComplete="off"
-                disabled={pkgLocked}
-                id="repo-pkg-url"
-                onChange={(e) => setPackageUrl(e.target.value)}
-                placeholder="https://munki.example.com/pkgs"
-                value={packageUrl}
-              />
-              <p className="text-xs text-muted-foreground">
-                Where Munki downloads installer items. Leave empty if you host
-                pkgs on the same host and path as{' '}
-                <code className="text-xs">SoftwareRepoURL/pkgs</code>.
-                {pkgLocked && (
-                  <>
-                    {' '}
-                    <span className="text-foreground">
-                      Pinned via{' '}
-                      <code className="text-xs">MUNKI_REPO_PKG_BASE_URL</code>.
-                    </span>
-                  </>
-                )}
-              </p>
-            </div>
-
-            <div className="grid gap-2 sm:max-w-xl">
-              <Label htmlFor="repo-cr-url">ClientResourceURL</Label>
-              <Input
-                autoComplete="off"
-                disabled={crLocked}
-                id="repo-cr-url"
-                onChange={(e) => setClientResourceUrl(e.target.value)}
-                placeholder={
-                  data?.client_resource_url_derived && data.client_resource_url
-                    ? `${data.client_resource_url} (derived)`
-                    : 'https://munki.example.com/client_resources'
-                }
-                value={clientResourceUrl}
-              />
-              <p className="text-xs text-muted-foreground">
-                Per-manifest client resource zips. Leave blank to auto-derive a
-                sibling path from <code className="text-xs">PackageURL</code>{' '}
-                (swapping <code className="text-xs">/pkgs</code> for{' '}
-                <code className="text-xs">/client_resources</code>).
-                {crLocked && (
-                  <>
-                    {' '}
-                    <span className="text-foreground">
-                      Pinned via{' '}
-                      <code className="text-xs">
-                        MUNKI_REPO_CLIENT_RESOURCES_BASE_URL
-                      </code>
-                      .
-                    </span>
-                  </>
-                )}
-              </p>
-            </div>
-
-            {mutation.isError && (
-              <p className="text-sm text-destructive">
-                {mutation.error instanceof Error
-                  ? mutation.error.message
-                  : 'Save failed'}
-              </p>
+      }
+      isPending={isPending}
+      isError={isError}
+      error={error}
+      skeletonClassName="h-48 w-full"
+    >
+      <form className="space-y-4" onSubmit={onSubmit}>
+        <div className="grid gap-2 sm:max-w-xl">
+          <Label htmlFor="repo-pkg-url">PackageURL</Label>
+          <Input
+            autoComplete="off"
+            disabled={pkgLocked}
+            id="repo-pkg-url"
+            onChange={(e) => setPackageUrl(e.target.value)}
+            placeholder="https://munki.example.com/pkgs"
+            value={packageUrl}
+          />
+          <p className="text-xs text-muted-foreground">
+            Where Munki downloads installer items. Leave empty if you host pkgs
+            on the same host and path as{' '}
+            <code className="text-xs">SoftwareRepoURL/pkgs</code>.
+            {pkgLocked && (
+              <>
+                {' '}
+                <span className="text-foreground">
+                  Pinned via{' '}
+                  <code className="text-xs">MUNKI_REPO_PKG_BASE_URL</code>.
+                </span>
+              </>
             )}
+          </p>
+        </div>
 
-            <Button
-              disabled={mutation.isPending || (pkgLocked && crLocked)}
-              type="submit"
-            >
-              {mutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Save className="h-4 w-4" aria-hidden />
-              )}
-              {mutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </form>
+        <div className="grid gap-2 sm:max-w-xl">
+          <Label htmlFor="repo-cr-url">ClientResourceURL</Label>
+          <Input
+            autoComplete="off"
+            disabled={crLocked}
+            id="repo-cr-url"
+            onChange={(e) => setClientResourceUrl(e.target.value)}
+            placeholder={
+              data?.client_resource_url_derived && data.client_resource_url
+                ? `${data.client_resource_url} (derived)`
+                : 'https://munki.example.com/client_resources'
+            }
+            value={clientResourceUrl}
+          />
+          <p className="text-xs text-muted-foreground">
+            Per-manifest client resource zips. Leave blank to auto-derive a
+            sibling path from <code className="text-xs">PackageURL</code>{' '}
+            (swapping <code className="text-xs">/pkgs</code> for{' '}
+            <code className="text-xs">/client_resources</code>).
+            {crLocked && (
+              <>
+                {' '}
+                <span className="text-foreground">
+                  Pinned via{' '}
+                  <code className="text-xs">
+                    MUNKI_REPO_CLIENT_RESOURCES_BASE_URL
+                  </code>
+                  .
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+
+        {mutation.isError && (
+          <p className="text-sm text-destructive">
+            {mutation.error instanceof Error
+              ? mutation.error.message
+              : 'Save failed'}
+          </p>
         )}
-      </CardContent>
-    </Card>
+
+        <Button
+          disabled={mutation.isPending || (pkgLocked && crLocked)}
+          type="submit"
+        >
+          {mutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : (
+            <Save className="h-4 w-4" aria-hidden />
+          )}
+          {mutation.isPending ? 'Saving…' : 'Save'}
+        </Button>
+      </form>
+    </SettingsFormCard>
   )
 }
 

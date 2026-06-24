@@ -272,7 +272,7 @@ function AddSoftwareButton({
 
   const basesInUse = useMemo(
     () => manifestItemBaseNamesInUse(existingItems),
-    [existingItems.join('\0')],
+    [existingItems],
   )
 
   const uniqueNames = [...itemsByName.keys()].filter((n) => !basesInUse.has(n))

@@ -37,6 +37,12 @@ from automunki.schemas.munki import (
 from automunki.services.audit import create_audit_entry
 from automunki.services.loose_version import loose_version_key
 from automunki.services.munki import compile_pkginfo_plist
+from automunki.services.pkginfo_audit import (
+    audit_values_equal,
+    build_audit_field_changes,
+    fetch_pkg_catalog_names,
+    snapshot_copy,
+)
 from automunki.services.pkginfo_latest import (
     fetch_latest_version_by_name,
     is_latest_version,
@@ -614,13 +620,13 @@ async def bulk_update_pkginfo(
         if not pkg or pkg.is_deleted:
             continue
 
-        before = _to_read(pkg)
-        before_names = [c.name for c in pkg.catalogs]
+        before = snapshot_copy(_to_read(pkg))
+        before_names = await fetch_pkg_catalog_names(session, pkg_id)
         changes: dict = {}
 
         if "category" in payload:
             pkg.category = payload["category"]
-            changes["category"] = {"before": before.get("category"), "after": payload["category"]}
+            changes.update(build_audit_field_changes(before, {"category": payload["category"]}))
 
         if "catalog_names" in payload:
             names = payload["catalog_names"]
@@ -638,10 +644,15 @@ async def bulk_update_pkginfo(
                         )
                     )
             await session.flush()
-            changes["catalog_names"] = {"before": before_names, "after": names}
+            after_names = await fetch_pkg_catalog_names(session, pkg_id)
+            changes["catalog_names"] = {"before": before_names, "after": after_names}
             await maybe_init_shard_after_catalog_change(
                 session, pkg_id, user_email=user.email if user else "system:shard-rollout"
             )
+
+        if not changes:
+            updated += 1
+            continue
 
         reload = await session.execute(
             select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id)
@@ -901,7 +912,7 @@ async def update_pkginfo(
     if not pkg:
         raise HTTPException(status_code=404, detail="PkgInfo not found")
 
-    before = _to_read(pkg)
+    before = snapshot_copy(_to_read(pkg))
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(pkg, field, value)
@@ -909,18 +920,20 @@ async def update_pkginfo(
         pkg.shard_rollout_status = ShardRolloutStatus.paused
         pkg.shard_override = ShardOverride.pause
 
-    await create_audit_entry(
-        session,
-        action="update",
-        entity_type="pkg_info",
-        entity_id=str(pkg_id),
-        entity_name=f"{pkg.name} {pkg.version}",
-        user_id=user.id if user else None,
-        user_email=user.email if user else None,
-        before_snapshot=before,
-        after_snapshot=_to_read(pkg),
-        changes=update_data,
-    )
+    changes = build_audit_field_changes(before, update_data)
+    if changes:
+        await create_audit_entry(
+            session,
+            action="update",
+            entity_type="pkg_info",
+            entity_id=str(pkg_id),
+            entity_name=f"{pkg.name} {pkg.version}",
+            user_id=user.id if user else None,
+            user_email=user.email if user else None,
+            before_snapshot=before,
+            after_snapshot=_to_read(pkg),
+            changes=changes,
+        )
 
     await session.commit()
     await session.refresh(pkg)
@@ -980,7 +993,7 @@ async def update_pkginfo_catalogs(
     if not pkg:
         raise HTTPException(status_code=404, detail="PkgInfo not found")
 
-    before_names = [c.name for c in pkg.catalogs]
+    before_names = await fetch_pkg_catalog_names(session, pkg_id)
 
     await session.execute(PkgInfoCatalog.__table__.delete().where(PkgInfoCatalog.pkg_info_id == pkg_id))
     await session.flush()
@@ -1005,16 +1018,20 @@ async def update_pkginfo_catalogs(
         session, pkg_id, user_email=user.email if user else "system:shard-rollout"
     )
 
-    await create_audit_entry(
-        session,
-        action="update",
-        entity_type="pkg_info",
-        entity_id=str(pkg_id),
-        entity_name=f"{pkg.name} {pkg.version}",
-        user_id=user.id if user else None,
-        user_email=user.email if user else None,
-        changes={"catalog_names": {"before": before_names, "after": data.catalog_names}},
-    )
+    after_names = await fetch_pkg_catalog_names(session, pkg_id)
+    if not audit_values_equal(before_names, after_names):
+        await create_audit_entry(
+            session,
+            action="update",
+            entity_type="pkg_info",
+            entity_id=str(pkg_id),
+            entity_name=f"{pkg.name} {pkg.version}",
+            user_id=user.id if user else None,
+            user_email=user.email if user else None,
+            before_snapshot={"catalog_names": before_names},
+            after_snapshot={"catalog_names": after_names},
+            changes={"catalog_names": {"before": before_names, "after": after_names}},
+        )
 
     await session.commit()
     result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))

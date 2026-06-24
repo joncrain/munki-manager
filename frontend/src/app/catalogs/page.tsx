@@ -1,21 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import {
-  FolderOpen,
-  LayoutGrid,
-  Loader2,
-  Plus,
-  Save,
-  Table2,
-  Trash2,
-} from 'lucide-react'
+import { FolderOpen, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { parseAsStringLiteral, useQueryState } from 'nuqs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTable } from '@/components/data-table'
 import { VersionWithLatestBadge } from '@/components/latest-version-badge'
+import { ListViewToggle } from '@/components/list-view-toggle'
 import { PageHeading } from '@/components/page-heading'
 import { CatalogSoftwareAvatarCircles } from '@/components/software-avatar-circles'
 import { SoftwareIcon } from '@/components/software-icon'
@@ -251,32 +245,7 @@ export default function CatalogsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PageHeading icon={FolderOpen} accent="catalogs" title="Catalogs" />
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="inline-flex items-center rounded-md border bg-muted/30 p-0.5">
-            <Button
-              type="button"
-              variant={listView === 'cards' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 gap-1.5 px-2.5"
-              aria-pressed={listView === 'cards'}
-              aria-label="Card layout"
-              onClick={() => setListView('cards')}
-            >
-              <LayoutGrid className="h-4 w-4" aria-hidden />
-              Cards
-            </Button>
-            <Button
-              type="button"
-              variant={listView === 'table' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 gap-1.5 px-2.5"
-              aria-pressed={listView === 'table'}
-              aria-label="Table layout"
-              onClick={() => setListView('table')}
-            >
-              <Table2 className="h-4 w-4" aria-hidden />
-              Table
-            </Button>
-          </div>
+          <ListViewToggle value={listView} onChange={setListView} />
           {canEditCatalogs ? (
             <Dialog
               open={createOpen}
@@ -375,43 +344,29 @@ export default function CatalogsPage() {
         </div>
       </div>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!deleteCatalog}
-        onOpenChange={(v) => {
-          if (!v) setDeleteCatalog(null)
+        onOpenChange={(open) => {
+          if (!open) setDeleteCatalog(null)
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Catalog</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &ldquo;{deleteCatalog?.name}
-              &rdquo;? This action cannot be undone.
-              {(deleteCatalog?.item_count ?? 0) > 0 && (
-                <span className="mt-2 block font-medium text-destructive">
-                  This catalog has {deleteCatalog?.item_count} assigned items
-                  and cannot be deleted until they are removed.
-                </span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteCatalog(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() =>
-                deleteCatalog && deleteMutation.mutate(deleteCatalog.id)
-              }
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Delete Catalog"
+        description={
+          <>
+            Are you sure you want to delete &ldquo;{deleteCatalog?.name}
+            &rdquo;? This action cannot be undone.
+            {(deleteCatalog?.item_count ?? 0) > 0 && (
+              <span className="mt-2 block font-medium text-destructive">
+                This catalog has {deleteCatalog?.item_count} assigned items and
+                cannot be deleted until they are removed.
+              </span>
+            )}
+          </>
+        }
+        isPending={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteCatalog) deleteMutation.mutate(deleteCatalog.id)
+        }}
+      />
 
       {viewCatalog && (
         <CatalogDetailDialog

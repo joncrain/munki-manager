@@ -22,7 +22,6 @@ import { EntityAuditTrail } from '@/components/audit/entity-audit-trail'
 import { useAuth } from '@/components/auth-provider'
 import { ManifestConditionalBlocksEditor } from '@/components/manifest-conditional-blocks-editor'
 import { ManifestItemSectionsTabs } from '@/components/manifest-item-sections-tabs'
-import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import {
   Breadcrumb,

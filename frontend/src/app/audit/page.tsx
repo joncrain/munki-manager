@@ -1,6 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
 import { ClipboardList, Search } from 'lucide-react'
-import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { parseAsString, useQueryState } from 'nuqs'
 import { useState } from 'react'
 import { AuditDetailDialog } from '@/components/audit/audit-detail-dialog'
 import { auditLogAdminColumns } from '@/components/audit/audit-log-columns'
@@ -16,7 +15,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useDocumentTitle } from '@/hooks/use-document-title'
-import { type AuditLogRead, api, type PaginatedResponse } from '@/lib/api'
+import { usePaginatedListQuery } from '@/hooks/use-paginated-list-query'
+import type { AuditLogRead } from '@/lib/api'
 
 const ACTION_OPTIONS = [
   'approve',
@@ -63,11 +63,6 @@ const ENTITY_OPTIONS = [
 export default function AuditPage() {
   useDocumentTitle('Admin', 'Audit Log')
   const [selectedEntry, setSelectedEntry] = useState<AuditLogRead | null>(null)
-  const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
-  const [pageSize, setPageSize] = useQueryState(
-    'pageSize',
-    parseAsInteger.withDefault(50),
-  )
   const [action, setAction] = useQueryState(
     'action',
     parseAsString.withDefault(''),
@@ -81,19 +76,23 @@ export default function AuditPage() {
     parseAsString.withDefault(''),
   )
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['audit', page, pageSize, action, entityType, search],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      params.set('page', String(page))
-      params.set('page_size', String(pageSize))
+  const {
+    page,
+    setPage,
+    pageSize,
+    resetPage,
+    onPageSizeChange,
+    data,
+    isLoading,
+  } = usePaginatedListQuery<AuditLogRead>({
+    queryKeyPrefix: ['audit'],
+    path: '/audit',
+    filterKey: [action, entityType, search],
+    appendSearchParams: (params) => {
       if (action) params.set('action', action)
       if (entityType) params.set('entity_type', entityType)
       const trimmedSearch = search.trim()
       if (trimmedSearch) params.set('search', trimmedSearch)
-      return api.get<PaginatedResponse<AuditLogRead>>(
-        `/audit?${params.toString()}`,
-      )
     },
   })
 
@@ -114,7 +113,7 @@ export default function AuditPage() {
           setAction(null)
           setEntityType(null)
           setSearch(null)
-          setPage(1)
+          resetPage()
         }}
       >
         <div className="relative max-w-sm flex-1">
@@ -124,7 +123,7 @@ export default function AuditPage() {
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
-              setPage(1)
+              resetPage()
             }}
             className="pl-9"
           />
@@ -134,7 +133,7 @@ export default function AuditPage() {
           value={action || '_all'}
           onValueChange={(v) => {
             setAction(v === '_all' ? null : v)
-            setPage(1)
+            resetPage()
           }}
         >
           <SelectTrigger className="w-full md:w-[140px]">
@@ -154,7 +153,7 @@ export default function AuditPage() {
           value={entityType || '_all'}
           onValueChange={(v) => {
             setEntityType(v === '_all' ? null : v)
-            setPage(1)
+            resetPage()
           }}
         >
           <SelectTrigger className="w-full md:w-[160px]">
@@ -184,10 +183,7 @@ export default function AuditPage() {
           pageSize={pageSize}
           total={data?.total}
           onPageChange={setPage}
-          onPageSizeChange={(size) => {
-            setPageSize(size)
-            setPage(1)
-          }}
+          onPageSizeChange={onPageSizeChange}
           isLoading={isLoading}
           getRowId={(row) => row.id}
           onRowClick={(row) => setSelectedEntry(row)}

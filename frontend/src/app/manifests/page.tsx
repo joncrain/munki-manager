@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { FileText, LayoutGrid, Plus, Table2, Trash2 } from 'lucide-react'
+import { FileText, Plus, Trash2 } from 'lucide-react'
 import { parseAsStringLiteral, useQueryState } from 'nuqs'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTable } from '@/components/data-table'
+import { ListViewToggle } from '@/components/list-view-toggle'
 import { PageHeading } from '@/components/page-heading'
 import { SoftwareNameAvatarCircles } from '@/components/software-avatar-circles'
 import { Badge } from '@/components/ui/badge'
@@ -251,32 +253,7 @@ export default function ManifestsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PageHeading icon={FileText} accent="manifests" title="Manifests" />
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="inline-flex items-center rounded-md border bg-muted/30 p-0.5">
-            <Button
-              type="button"
-              variant={view === 'cards' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 gap-1.5 px-2.5"
-              aria-pressed={view === 'cards'}
-              aria-label="Card layout"
-              onClick={() => setView('cards')}
-            >
-              <LayoutGrid className="h-4 w-4" aria-hidden />
-              Cards
-            </Button>
-            <Button
-              type="button"
-              variant={view === 'table' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 gap-1.5 px-2.5"
-              aria-pressed={view === 'table'}
-              aria-label="Table layout"
-              onClick={() => setView('table')}
-            >
-              <Table2 className="h-4 w-4" aria-hidden />
-              Table
-            </Button>
-          </div>
+          <ListViewToggle value={view} onChange={setView} />
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             {canEditManifests ? (
               <DialogTrigger asChild>
@@ -335,38 +312,24 @@ export default function ManifestsPage() {
         </div>
       </div>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!deleteManifest}
-        onOpenChange={(v) => {
-          if (!v) setDeleteManifest(null)
+        onOpenChange={(open) => {
+          if (!open) setDeleteManifest(null)
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Manifest</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &ldquo;
-              {deleteManifest ? manifestTitle(deleteManifest) : ''}
-              &rdquo;? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteManifest(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() =>
-                deleteManifest && deleteMutation.mutate(deleteManifest.id)
-              }
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Delete Manifest"
+        description={
+          <>
+            Are you sure you want to delete &ldquo;
+            {deleteManifest ? manifestTitle(deleteManifest) : ''}
+            &rdquo;? This action cannot be undone.
+          </>
+        }
+        isPending={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteManifest) deleteMutation.mutate(deleteManifest.id)
+        }}
+      />
 
       {!manifests?.length ? (
         <p className="text-muted-foreground">

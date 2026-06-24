@@ -17,6 +17,8 @@ type FleetTimeseriesChartProps = {
   gradientId: string
   strokeVar: string
   emptyMessage: string
+  dataKey?: string
+  height?: number
 }
 
 export function FleetTimeseriesChart({
@@ -25,6 +27,8 @@ export function FleetTimeseriesChart({
   gradientId,
   strokeVar,
   emptyMessage,
+  dataKey = 'count',
+  height = 220,
 }: FleetTimeseriesChartProps) {
   const data = useMemo(
     () =>
@@ -35,19 +39,26 @@ export function FleetTimeseriesChart({
     [points],
   )
 
-  const hasActivity = useMemo(() => points.some((p) => p.count > 0), [points])
+  const hasActivity = useMemo(
+    () =>
+      points.some((p) => {
+        const value = p[dataKey as keyof CheckinHistoryPoint]
+        return typeof value === 'number' && value > 0
+      }),
+    [points, dataKey],
+  )
 
   if (!points.length || !hasActivity) {
     return <p className="text-sm text-muted-foreground">{emptyMessage}</p>
   }
 
   return (
-    <div className="h-[220px] w-full min-w-0">
+    <div className="w-full min-w-0" style={{ height }}>
       <ResponsiveContainer
         width="100%"
         height="100%"
         minWidth={0}
-        initialDimension={{ width: 1, height: 220 }}
+        initialDimension={{ width: 1, height }}
       >
         <AreaChart
           data={data}
@@ -93,7 +104,7 @@ export function FleetTimeseriesChart({
           />
           <Area
             type="monotone"
-            dataKey="count"
+            dataKey={dataKey}
             stroke={strokeVar}
             fill={`url(#${gradientId})`}
             strokeWidth={2}

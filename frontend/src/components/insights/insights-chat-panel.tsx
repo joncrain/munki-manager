@@ -40,7 +40,7 @@ export function InsightsChatPanel({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
-  }, [messages, status])
+  }, [])
 
   useEffect(() => {
     inputRef.current?.focus()

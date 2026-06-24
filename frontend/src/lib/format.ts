@@ -88,3 +88,17 @@ export function formatInstallReason(reason: string | null | undefined): string {
   }
   return map[reason] ?? reason.replace(/_/g, ' ')
 }
+
+export function installReportStatusVariant(status: string) {
+  switch (status) {
+    case 'installed':
+      return 'default' as const
+    case 'failed':
+    case 'removal_failed':
+      return 'destructive' as const
+    case 'removed':
+      return 'secondary' as const
+    default:
+      return 'outline' as const
+  }
+}

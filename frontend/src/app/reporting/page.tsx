@@ -1,28 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Activity, MonitorSmartphone, MoonStar, Percent } from 'lucide-react'
-import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { MonitorSmartphone } from 'lucide-react'
+import { parseAsString, useQueryState } from 'nuqs'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
 import { PageHeading } from '@/components/page-heading'
 import { Badge } from '@/components/ui/badge'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useDocumentTitle } from '@/hooks/use-document-title'
-import {
-  api,
-  type ClientMachineSummary,
-  type FleetComplianceOverview,
-  type ManifestRead,
-  type PaginatedResponse,
-} from '@/lib/api'
+import { usePaginatedListQuery } from '@/hooks/use-paginated-list-query'
+import { api, type ClientMachineSummary, type ManifestRead } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 
 function makeColumns(
@@ -97,11 +85,6 @@ function makeColumns(
 
 export default function ReportingPage() {
   useDocumentTitle('Reporting', 'Devices')
-  const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
-  const [pageSize, setPageSize] = useQueryState(
-    'pageSize',
-    parseAsInteger.withDefault(50),
-  )
   const [search, setSearch] = useQueryState('q', parseAsString.withDefault(''))
 
   const { data: manifests } = useQuery({
@@ -122,21 +105,20 @@ export default function ReportingPage() {
     [manifestIdByName],
   )
 
-  const { data: compliance, isLoading: complianceLoading } = useQuery({
-    queryKey: ['reports-compliance'],
-    queryFn: () => api.get<FleetComplianceOverview>('/reports/compliance'),
-  })
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['reports-machines', page, pageSize, search],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      params.set('page', String(page))
-      params.set('page_size', String(pageSize))
+  const {
+    page,
+    setPage,
+    pageSize,
+    resetPage,
+    onPageSizeChange,
+    data,
+    isLoading,
+  } = usePaginatedListQuery<ClientMachineSummary>({
+    queryKeyPrefix: ['reports-machines'],
+    path: '/reports/machines',
+    filterKey: [search],
+    appendSearchParams: (params) => {
       if (search.trim()) params.set('search', search.trim())
-      return api.get<PaginatedResponse<ClientMachineSummary>>(
-        `/reports/machines?${params.toString()}`,
-      )
     },
   })
 
@@ -156,7 +138,7 @@ export default function ReportingPage() {
           value={search}
           onChange={(e) => {
             setSearch(e.target.value || null)
-            setPage(1)
+            resetPage()
           }}
           className="max-w-sm"
           aria-label="Search devices"
@@ -172,10 +154,7 @@ export default function ReportingPage() {
           pageSize={pageSize}
           total={data?.total}
           onPageChange={setPage}
-          onPageSizeChange={(size) => {
-            setPageSize(size)
-            setPage(1)
-          }}
+          onPageSizeChange={onPageSizeChange}
           isLoading={isLoading}
         />
       </div>

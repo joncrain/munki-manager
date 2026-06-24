@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type ColumnDef } from '@tanstack/react-table'
 import {
   Activity,
   Code2,
@@ -10,24 +9,17 @@ import {
   Loader2,
   Package,
   Pencil,
-  Plus,
   Save,
   ScanSearch,
   Trash2,
   X,
 } from 'lucide-react'
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-} from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { EntityAuditTrail } from '@/components/audit/entity-audit-trail'
 import { useAuth } from '@/components/auth-provider'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTable } from '@/components/data-table'
 import {
   LatestVersionBadge,
@@ -35,6 +27,33 @@ import {
 } from '@/components/latest-version-badge'
 import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
 import { SoftwareInstallVersionTimelineChart } from '@/components/reporting/software-install-version-timeline-chart'
+import {
+  BooleanField,
+  EditableField,
+  InstallerSizeMbField,
+  ReadOnlyField,
+  ScriptField,
+  TagDisplay,
+  TagField,
+} from '@/components/software-detail/fields'
+import {
+  InstallsEditor,
+  ItemsToCopyEditor,
+  installItemKey,
+  itemToCopyKey,
+  ReceiptsEditor,
+  receiptItemKey,
+} from '@/components/software-detail/install-editors'
+import { softwareInstallReportColumns } from '@/components/software-detail/install-report-columns'
+import {
+  CatalogsPromotionCard,
+  ProductionRolloutCard,
+} from '@/components/software-detail/promotion-cards'
+import {
+  softwareDetailTabContentClass,
+  softwareDetailTabTrigger,
+  softwareTabIconClass,
+} from '@/components/software-detail/tab-styles'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -66,9 +85,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
-import { Slider } from '@/components/ui/slider'
-import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { useDocumentTitle } from '@/hooks/use-document-title'
@@ -76,285 +92,22 @@ import { usePkginfoVersionsForName } from '@/hooks/use-pkginfo-versions'
 import {
   api,
   apiGetText,
-  type CatalogRead,
   type ClientInstallReportListItem,
-  type InstallItem,
-  type ItemToCopy,
   type PaginatedResponse,
   type PkgInfoDetail,
   type PkgInfoInstallReportSummary,
-  type PkgInfoPromotionStatusRead,
-  type PkgInfoShardStatusRead,
-  type PromotionChannelRead,
-  type ReceiptItem,
 } from '@/lib/api'
-import { parseCatalogListInput } from '@/lib/autopkg-recipe'
-import { formatDate, formatDateTime, formatInstallReason } from '@/lib/format'
-import { looseVersionSortingFn } from '@/lib/loose-version'
 import { munkiAccents } from '@/lib/munki-accents'
 import { PAGE_KEYS } from '@/lib/page-keys'
 import { publicApiBaseUrl } from '@/lib/public-api-base'
-import { manifestRiskAlertClass } from '@/lib/shard-ui'
+import {
+  buildUpdatePayload,
+  type EditableFields,
+  filterSharedPayload,
+  pkgToEditable,
+  versionSpecificPayload,
+} from '@/lib/software-detail-form'
 import { cn } from '@/lib/utils'
-
-function softwareInstallReportStatusVariant(status: string) {
-  switch (status) {
-    case 'installed':
-      return 'default' as const
-    case 'failed':
-    case 'removal_failed':
-      return 'destructive' as const
-    case 'removed':
-      return 'secondary' as const
-    default:
-      return 'outline' as const
-  }
-}
-
-const makeSoftwareInstallReportColumns = (
-  latestVersion: string | undefined,
-): ColumnDef<ClientInstallReportListItem>[] => [
-  {
-    accessorKey: 'created_at',
-    header: 'Reported',
-    cell: ({ row }) => (
-      <span suppressHydrationWarning className="text-sm">
-        {formatDateTime(row.original.created_at)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'item_version',
-    header: 'Version',
-    sortingFn: looseVersionSortingFn,
-    cell: ({ row }) => (
-      <VersionWithLatestBadge
-        version={row.original.item_version}
-        isLatest={
-          !!row.original.item_version &&
-          !!latestVersion &&
-          row.original.item_version === latestVersion
-        }
-      />
-    ),
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => (
-      <Badge variant={softwareInstallReportStatusVariant(row.original.status)}>
-        {row.original.status}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: 'install_reason',
-    header: 'Reason',
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">
-        {formatInstallReason(row.original.install_reason)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'hostname',
-    header: 'Device',
-    cell: ({ row }) => (
-      <Link
-        to={`/reporting/devices/${row.original.machine_id}`}
-        className="text-primary underline-offset-4 hover:underline"
-      >
-        {row.original.hostname || row.original.serial_number || '—'}
-      </Link>
-    ),
-  },
-  {
-    accessorKey: 'install_date',
-    header: 'Install time',
-    cell: ({ row }) =>
-      row.original.install_date ? (
-        <span suppressHydrationWarning className="text-sm">
-          {formatDateTime(row.original.install_date)}
-        </span>
-      ) : (
-        '—'
-      ),
-  },
-  {
-    accessorKey: 'error_message',
-    header: 'Note',
-    cell: ({ row }) => (
-      <span className="line-clamp-2 max-w-[240px] text-sm text-muted-foreground">
-        {row.original.error_message || '—'}
-      </span>
-    ),
-  },
-]
-
-const softwareDetailTabContentClass = cn(
-  'space-y-4',
-  'animate-in fade-in-0 slide-in-from-bottom-1 duration-300',
-)
-
-function softwareDetailTabTrigger(activeRing: string) {
-  return cn(
-    'group/tab flex-none gap-2 px-4 py-2.5 min-h-11 rounded-lg border border-transparent',
-    'text-muted-foreground transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out will-change-transform',
-    'hover:bg-background/80 hover:text-foreground',
-    'data-[state=inactive]:hover:scale-[1.03] data-[state=inactive]:hover:-translate-y-0.5',
-    'data-[state=inactive]:hover:border-border/35 data-[state=inactive]:hover:shadow-sm',
-    'data-[state=active]:scale-[1.02] data-[state=active]:bg-background data-[state=active]:shadow-md',
-    'data-[state=active]:border-border/60 data-[state=active]:hover:scale-[1.03]',
-    'motion-reduce:data-[state=inactive]:hover:scale-100 motion-reduce:data-[state=inactive]:hover:translate-y-0',
-    'motion-reduce:data-[state=active]:scale-100 motion-reduce:data-[state=active]:hover:scale-100',
-    activeRing,
-  )
-}
-
-const softwareTabIconClass =
-  'size-4 shrink-0 opacity-70 transition-[opacity,transform] duration-200 ease-out group-hover/tab:opacity-100 group-data-[state=inactive]/tab:group-hover/tab:scale-105 group-data-[state=active]/tab:opacity-100 group-data-[state=active]/tab:scale-110 group-data-[state=active]/tab:group-hover/tab:scale-[1.18] motion-reduce:group-hover/tab:scale-100 motion-reduce:group-data-[state=active]/tab:scale-100 motion-reduce:group-data-[state=active]/tab:group-hover/tab:scale-100'
-
-interface EditableFields {
-  display_name: string
-  description: string
-  category: string
-  developer: string
-  icon_name: string
-  installer_item_location: string
-  installer_item_hash: string
-  installer_item_size: number | null
-  minimum_os_version: string
-  maximum_os_version: string
-  uninstall_method: string
-  unattended_install: boolean
-  unattended_uninstall: boolean
-  autoremove: boolean
-  uninstallable: boolean
-  blocking_applications: string[]
-  supported_architectures: string[]
-  requires: string[]
-  update_for: string[]
-  installs: InstallItem[]
-  receipts: ReceiptItem[]
-  items_to_copy: ItemToCopy[]
-  installcheck_script: string
-  uninstallcheck_script: string
-  version_script: string
-  preinstall_script: string
-  postinstall_script: string
-  preuninstall_script: string
-  postuninstall_script: string
-  notes: string
-  restart_action: string
-  on_demand: boolean
-  force_install_after_date: string
-  apple_item: boolean
-  installable_condition: string
-  package_path: string
-  package_complete_url: string
-  minimum_munki_version: string
-  installer_type: string
-  installed_size: number | null
-  uninstaller_item_location: string
-}
-
-function pkgToEditable(pkg: PkgInfoDetail): EditableFields {
-  return {
-    display_name: pkg.display_name ?? '',
-    description: pkg.description ?? '',
-    category: pkg.category ?? '',
-    developer: pkg.developer ?? '',
-    icon_name: pkg.icon_name ?? '',
-    installer_item_location: pkg.installer_item_location ?? '',
-    installer_item_hash: pkg.installer_item_hash ?? '',
-    installer_item_size: pkg.installer_item_size,
-    minimum_os_version: pkg.minimum_os_version ?? '',
-    maximum_os_version: pkg.maximum_os_version ?? '',
-    uninstall_method: pkg.uninstall_method ?? '',
-    unattended_install: pkg.unattended_install,
-    unattended_uninstall: pkg.unattended_uninstall,
-    autoremove: pkg.autoremove,
-    uninstallable: pkg.uninstallable,
-    blocking_applications: pkg.blocking_applications ?? [],
-    supported_architectures: pkg.supported_architectures ?? [],
-    requires: pkg.requires ?? [],
-    update_for: pkg.update_for ?? [],
-    installs: pkg.installs ?? [],
-    receipts: pkg.receipts ?? [],
-    items_to_copy: pkg.items_to_copy ?? [],
-    installcheck_script: pkg.installcheck_script ?? '',
-    uninstallcheck_script: pkg.uninstallcheck_script ?? '',
-    version_script: pkg.version_script ?? '',
-    preinstall_script: pkg.preinstall_script ?? '',
-    postinstall_script: pkg.postinstall_script ?? '',
-    preuninstall_script: pkg.preuninstall_script ?? '',
-    postuninstall_script: pkg.postuninstall_script ?? '',
-    notes: pkg.notes ?? '',
-    restart_action: pkg.restart_action ?? '',
-    on_demand: pkg.on_demand,
-    force_install_after_date: pkg.force_install_after_date ?? '',
-    apple_item: pkg.apple_item,
-    installable_condition: pkg.installable_condition ?? '',
-    package_path: pkg.package_path ?? '',
-    package_complete_url: pkg.package_complete_url ?? '',
-    minimum_munki_version: pkg.minimum_munki_version ?? '',
-    installer_type: pkg.installer_type ?? '',
-    installed_size: pkg.installed_size,
-    uninstaller_item_location: pkg.uninstaller_item_location ?? '',
-  }
-}
-
-function buildUpdatePayload(
-  original: EditableFields,
-  edited: EditableFields,
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {}
-  for (const key of Object.keys(edited) as (keyof EditableFields)[]) {
-    const o = original[key]
-    const e = edited[key]
-    if (Array.isArray(o) && Array.isArray(e)) {
-      if (JSON.stringify(o) !== JSON.stringify(e)) payload[key] = e
-    } else if (o !== e) {
-      if (typeof e === 'string') {
-        payload[key] = e === '' ? null : e
-      } else {
-        payload[key] = e
-      }
-    }
-  }
-  return payload
-}
-
-const VERSION_SPECIFIC_FIELDS: (keyof EditableFields)[] = [
-  'installer_item_location',
-  'installer_item_hash',
-  'installer_item_size',
-  'package_path',
-  'package_complete_url',
-  'installed_size',
-  'uninstaller_item_location',
-  'receipts',
-]
-
-function filterSharedPayload(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  const out = { ...payload }
-  for (const key of VERSION_SPECIFIC_FIELDS) {
-    delete out[key]
-  }
-  return out
-}
-
-function versionSpecificPayload(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const key of VERSION_SPECIFIC_FIELDS) {
-    if (key in payload) out[key] = payload[key]
-  }
-  return out
-}
 
 export default function SoftwareDetailPage() {
   const params = useParams()
@@ -407,7 +160,7 @@ export default function SoftwareDetailPage() {
     !!pkg && (!latestVersion || pkg.version === latestVersion)
 
   const installReportColumns = useMemo(
-    () => makeSoftwareInstallReportColumns(latestVersion),
+    () => softwareInstallReportColumns(latestVersion),
     [latestVersion],
   )
 
@@ -447,7 +200,7 @@ export default function SoftwareDetailPage() {
       const params = new URLSearchParams()
       params.set('page', String(installReportPage))
       params.set('page_size', String(installReportPageSize))
-      params.set('item_name', pkg!.name)
+      params.set('item_name', pkg?.name ?? '')
       return api.get<PaginatedResponse<ClientInstallReportListItem>>(
         `/reports/installs?${params.toString()}`,
       )
@@ -549,7 +302,7 @@ export default function SoftwareDetailPage() {
     setForm(null)
     setSaveDialogOpen(false)
     setPendingSavePayload(null)
-  }, [id])
+  }, [])
 
   const handleBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
@@ -848,64 +601,48 @@ export default function SoftwareDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={(open) => {
           setDeleteDialogOpen(open)
           if (!open) setClearMetadataCacheOnDelete(false)
         }}
+        title="Remove from software catalog"
+        description={
+          <>
+            This marks{' '}
+            <span className="font-medium text-foreground">
+              {pkg.display_name || pkg.name}
+            </span>{' '}
+            as deleted and removes it from Munki catalogs. Clients will no
+            longer see it as an optional install from those catalogs.
+          </>
+        }
+        confirmLabel="Remove"
+        pendingLabel="Removing…"
+        isPending={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove from software catalog</DialogTitle>
-            <DialogDescription>
-              This marks{' '}
-              <span className="font-medium text-foreground">
-                {pkg.display_name || pkg.name}
-              </span>{' '}
-              as deleted and removes it from Munki catalogs. Clients will no
-              longer see it as an optional install from those catalogs.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-start gap-2 rounded-md border p-3">
-            <Checkbox
-              id={clearCacheCheckboxId}
-              checked={clearMetadataCacheOnDelete}
-              onCheckedChange={(c) => setClearMetadataCacheOnDelete(!!c)}
-              disabled={deleteMutation.isPending}
-            />
-            <label
-              htmlFor={clearCacheCheckboxId}
-              className="cursor-pointer text-left text-sm leading-tight"
-            >
-              <span className="font-medium">Also clear metadata cache</span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                Lets the next cloud/local AutoPkg run re-notice this recipe
-                instead of reporting no change. Only works if this item was
-                imported with a recipe identifier.
-              </span>
-            </label>
-          </div>
-          <DialogFooter className="gap-2 sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-              disabled={deleteMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => deleteMutation.mutate()}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? 'Removing…' : 'Remove'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <div className="flex items-start gap-2 rounded-md border p-3">
+          <Checkbox
+            id={clearCacheCheckboxId}
+            checked={clearMetadataCacheOnDelete}
+            onCheckedChange={(c) => setClearMetadataCacheOnDelete(!!c)}
+            disabled={deleteMutation.isPending}
+          />
+          <label
+            htmlFor={clearCacheCheckboxId}
+            className="cursor-pointer text-left text-sm leading-tight"
+          >
+            <span className="font-medium">Also clear metadata cache</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Lets the next cloud/local AutoPkg run re-notice this recipe
+              instead of reporting no change. Only works if this item was
+              imported with a recipe identifier.
+            </span>
+          </label>
+        </div>
+      </ConfirmDialog>
 
       <Tabs defaultValue="details" className="gap-4">
         <TabsList
@@ -1311,8 +1048,11 @@ export default function SoftwareDetailPage() {
                   />
                 ) : (form?.installs?.length ?? 0) > 0 ? (
                   <div className="space-y-2">
-                    {(form?.installs ?? pkg.installs ?? []).map((item, i) => (
-                      <div key={i} className="rounded-md border p-3 text-sm">
+                    {(form?.installs ?? pkg.installs ?? []).map((item) => (
+                      <div
+                        key={installItemKey(item)}
+                        className="rounded-md border p-3 text-sm"
+                      >
                         <div className="grid gap-2 md:grid-cols-3">
                           {item.type && (
                             <div>
@@ -1370,8 +1110,11 @@ export default function SoftwareDetailPage() {
                   />
                 ) : (form?.receipts?.length ?? 0) > 0 ? (
                   <div className="space-y-2">
-                    {(form?.receipts ?? pkg.receipts ?? []).map((item, i) => (
-                      <div key={i} className="rounded-md border p-3 text-sm">
+                    {(form?.receipts ?? pkg.receipts ?? []).map((item) => (
+                      <div
+                        key={receiptItemKey(item)}
+                        className="rounded-md border p-3 text-sm"
+                      >
                         <div className="grid gap-2 md:grid-cols-3">
                           {item.packageid && (
                             <div>
@@ -1524,8 +1267,11 @@ export default function SoftwareDetailPage() {
                 ) : (form?.items_to_copy?.length ?? 0) > 0 ? (
                   <div className="space-y-2">
                     {(form?.items_to_copy ?? pkg.items_to_copy ?? []).map(
-                      (item, i) => (
-                        <div key={i} className="rounded-md border p-3 text-sm">
+                      (item) => (
+                        <div
+                          key={itemToCopyKey(item)}
+                          className="rounded-md border p-3 text-sm"
+                        >
                           <div className="grid gap-2 md:grid-cols-2">
                             {item.source_item && (
                               <div>
@@ -1784,1168 +1530,5 @@ export default function SoftwareDetailPage() {
         </TabsContent>
       </Tabs>
     </div>
-  )
-}
-
-/* ── Shared Field Components ── */
-
-function ReadOnlyField({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div>
-      <span className="text-sm font-medium text-muted-foreground">{label}</span>
-      <div className="mt-1 truncate">{value || '—'}</div>
-    </div>
-  )
-}
-
-function EditableField({
-  label,
-  value,
-  editing,
-  onChange,
-}: {
-  label: string
-  value: string
-  editing: boolean
-  onChange: (v: string) => void
-}) {
-  if (!editing) {
-    return (
-      <div>
-        <span className="text-sm font-medium text-muted-foreground">
-          {label}
-        </span>
-        <p className="mt-1 truncate">{value || '—'}</p>
-      </div>
-    )
-  }
-  return (
-    <div>
-      <Label>{label}</Label>
-      <Input
-        className="mt-1"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
-  )
-}
-
-/** Munki ``installer_item_size`` is in KiB; we edit in MB for readability. */
-function InstallerSizeMbField({
-  label,
-  kb,
-  editing,
-  onKbChange,
-}: {
-  label: string
-  kb: number | null | undefined
-  editing: boolean
-  onKbChange: (v: number | null) => void
-}) {
-  const displayMb = kb != null && kb > 0 ? `${Math.round(kb / 1024)} MB` : '—'
-  if (!editing) {
-    return (
-      <div>
-        <span className="text-sm font-medium text-muted-foreground">
-          {label}
-        </span>
-        <p className="mt-1 truncate">{displayMb}</p>
-      </div>
-    )
-  }
-  return (
-    <div>
-      <Label>{label} (MB)</Label>
-      <Input
-        type="number"
-        min={0}
-        className="mt-1"
-        value={kb != null && kb > 0 ? Math.round(kb / 1024) : ''}
-        onChange={(e) => {
-          const v = e.target.value
-          if (v === '') onKbChange(null)
-          else {
-            const n = Number.parseInt(v, 10)
-            if (!Number.isNaN(n)) onKbChange(n * 1024)
-          }
-        }}
-      />
-      <p className="mt-1 text-xs text-muted-foreground">
-        Stored as KiB for Munki installer_item_size.
-      </p>
-    </div>
-  )
-}
-
-function BooleanField({
-  label,
-  value,
-  editing,
-  onChange,
-}: {
-  label: string
-  value: boolean
-  editing: boolean
-  onChange: (v: boolean) => void
-}) {
-  if (!editing) {
-    return (
-      <div>
-        <span className="text-sm font-medium text-muted-foreground">
-          {label}
-        </span>
-        <p className="mt-1">
-          <Badge variant={value ? 'default' : 'outline'}>
-            {value ? 'Yes' : 'No'}
-          </Badge>
-        </p>
-      </div>
-    )
-  }
-  return (
-    <div className="flex items-center justify-between">
-      <Label>{label}</Label>
-      <Switch checked={value} onCheckedChange={onChange} />
-    </div>
-  )
-}
-
-function TagField({
-  label,
-  values,
-  onChange,
-}: {
-  label: string
-  values: string[]
-  onChange: (v: string[]) => void
-}) {
-  const [input, setInput] = useState('')
-
-  const addTag = () => {
-    const trimmed = input.trim()
-    if (trimmed && !values.includes(trimmed)) {
-      onChange([...values, trimmed])
-    }
-    setInput('')
-  }
-
-  return (
-    <div>
-      <Label>{label}</Label>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {values.map((v) => (
-          <Badge key={v} variant="secondary" className="gap-1">
-            {v}
-            <button
-              type="button"
-              aria-label={`Remove ${v}`}
-              className="ml-1 hover:text-destructive"
-              onClick={() => onChange(values.filter((x) => x !== v))}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        ))}
-      </div>
-      <div className="mt-2 flex gap-2">
-        <Input
-          placeholder={`Add ${label.toLowerCase()}...`}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              addTag()
-            }
-          }}
-          className="max-w-xs"
-        />
-        <Button type="button" variant="outline" size="sm" onClick={addTag}>
-          Add
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function TagDisplay({
-  label,
-  values,
-}: {
-  label: string
-  values: string[] | null | undefined
-}) {
-  if (!values?.length) {
-    return (
-      <div>
-        <span className="text-sm font-medium text-muted-foreground">
-          {label}
-        </span>
-        <p className="mt-1 text-sm text-muted-foreground">—</p>
-      </div>
-    )
-  }
-  return (
-    <div>
-      <span className="text-sm font-medium text-muted-foreground">{label}</span>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {values.map((v) => (
-          <Badge key={v} variant="outline">
-            {v}
-          </Badge>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ScriptField({
-  label,
-  value,
-  editing,
-  onChange,
-  description,
-}: {
-  label: string
-  value: string
-  editing: boolean
-  onChange: (v: string) => void
-  description?: string
-}) {
-  if (!editing && !value) return null
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{label}</CardTitle>
-        {description && (
-          <p className="text-sm text-muted-foreground">{description}</p>
-        )}
-      </CardHeader>
-      <CardContent>
-        {editing ? (
-          <Textarea
-            className="min-h-[120px] font-mono text-sm"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={`Enter ${label}...`}
-            rows={8}
-          />
-        ) : (
-          <pre className="overflow-auto rounded-md bg-muted p-4 font-mono text-sm">
-            {value}
-          </pre>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-/* ── Installs Editor ── */
-
-const INSTALL_TYPES = [
-  'file',
-  'bundle',
-  'plist',
-  'application',
-  'launchd',
-  'startup_item',
-]
-
-function InstallsEditor({
-  items,
-  onChange,
-}: {
-  items: InstallItem[]
-  onChange: (items: InstallItem[]) => void
-}) {
-  const updateItem = (index: number, field: string, value: string) => {
-    const updated = [...items]
-    updated[index] = { ...updated[index], [field]: value }
-    onChange(updated)
-  }
-
-  const removeItem = (index: number) => {
-    onChange(items.filter((_, i) => i !== index))
-  }
-
-  const addItem = () => {
-    onChange([...items, { type: 'file', path: '' }])
-  }
-
-  return (
-    <div className="space-y-3">
-      {items.map((item, i) => (
-        <div key={i} className="rounded-md border p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-medium">Item {i + 1}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-destructive"
-              onClick={() => removeItem(i)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <div className="grid gap-2 md:grid-cols-2">
-            <div>
-              <Label className="text-xs">Type</Label>
-              <Select
-                value={item.type ?? 'file'}
-                onValueChange={(v) => updateItem(i, 'type', v)}
-              >
-                <SelectTrigger className="mt-1 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {INSTALL_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Path</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.path ?? ''}
-                onChange={(e) => updateItem(i, 'path', e.target.value)}
-                placeholder="/Applications/Example.app"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">CFBundleIdentifier</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={(item.CFBundleIdentifier as string) ?? ''}
-                onChange={(e) =>
-                  updateItem(i, 'CFBundleIdentifier', e.target.value)
-                }
-                placeholder="com.example.app"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">CFBundleShortVersionString</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={(item.CFBundleShortVersionString as string) ?? ''}
-                onChange={(e) =>
-                  updateItem(i, 'CFBundleShortVersionString', e.target.value)
-                }
-                placeholder="1.0.0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">version_comparison_key</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={(item.version_comparison_key as string) ?? ''}
-                onChange={(e) =>
-                  updateItem(i, 'version_comparison_key', e.target.value)
-                }
-                placeholder="CFBundleShortVersionString"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">minosversion</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={(item.minosversion as string) ?? ''}
-                onChange={(e) => updateItem(i, 'minosversion', e.target.value)}
-                placeholder="10.15"
-              />
-            </div>
-          </div>
-        </div>
-      ))}
-      <Button variant="outline" size="sm" onClick={addItem}>
-        <Plus className="mr-1 h-3.5 w-3.5" />
-        Add Install Item
-      </Button>
-    </div>
-  )
-}
-
-/* ── Receipts Editor ── */
-
-function ReceiptsEditor({
-  items,
-  onChange,
-}: {
-  items: ReceiptItem[]
-  onChange: (items: ReceiptItem[]) => void
-}) {
-  const updateItem = (
-    index: number,
-    field: string,
-    value: string | boolean,
-  ) => {
-    const updated = [...items]
-    updated[index] = { ...updated[index], [field]: value }
-    onChange(updated)
-  }
-
-  const removeItem = (index: number) => {
-    onChange(items.filter((_, i) => i !== index))
-  }
-
-  const addItem = () => {
-    onChange([...items, { packageid: '', version: '' }])
-  }
-
-  return (
-    <div className="space-y-3">
-      {items.map((item, i) => (
-        <div key={i} className="rounded-md border p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-medium">Receipt {i + 1}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-destructive"
-              onClick={() => removeItem(i)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <div className="grid gap-2 md:grid-cols-3">
-            <div>
-              <Label className="text-xs">Package ID</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.packageid ?? ''}
-                onChange={(e) => updateItem(i, 'packageid', e.target.value)}
-                placeholder="com.example.pkg"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Version</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.version ?? ''}
-                onChange={(e) => updateItem(i, 'version', e.target.value)}
-                placeholder="1.0.0"
-              />
-            </div>
-            <div className="flex items-end gap-2 pb-0.5">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={item.optional ?? false}
-                  onCheckedChange={(v) => updateItem(i, 'optional', v)}
-                />
-                <Label className="text-xs">Optional</Label>
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
-      <Button variant="outline" size="sm" onClick={addItem}>
-        <Plus className="mr-1 h-3.5 w-3.5" />
-        Add Receipt
-      </Button>
-    </div>
-  )
-}
-
-/* ── Items to Copy Editor ── */
-
-function ItemsToCopyEditor({
-  items,
-  onChange,
-}: {
-  items: ItemToCopy[]
-  onChange: (items: ItemToCopy[]) => void
-}) {
-  const updateItem = (index: number, field: string, value: string) => {
-    const updated = [...items]
-    updated[index] = { ...updated[index], [field]: value }
-    onChange(updated)
-  }
-
-  const removeItem = (index: number) => {
-    onChange(items.filter((_, i) => i !== index))
-  }
-
-  const addItem = () => {
-    onChange([...items, { source_item: '', destination_path: '' }])
-  }
-
-  return (
-    <div className="space-y-3">
-      {items.map((item, i) => (
-        <div key={i} className="rounded-md border p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-medium">Item {i + 1}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-destructive"
-              onClick={() => removeItem(i)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <div className="grid gap-2 md:grid-cols-2">
-            <div>
-              <Label className="text-xs">Source Item</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.source_item ?? ''}
-                onChange={(e) => updateItem(i, 'source_item', e.target.value)}
-                placeholder="Example.app"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Destination Path</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.destination_path ?? ''}
-                onChange={(e) =>
-                  updateItem(i, 'destination_path', e.target.value)
-                }
-                placeholder="/Applications"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Destination Item</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.destination_item ?? ''}
-                onChange={(e) =>
-                  updateItem(i, 'destination_item', e.target.value)
-                }
-              />
-            </div>
-            <div>
-              <Label className="text-xs">User</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.user ?? ''}
-                onChange={(e) => updateItem(i, 'user', e.target.value)}
-                placeholder="root"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Group</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.group ?? ''}
-                onChange={(e) => updateItem(i, 'group', e.target.value)}
-                placeholder="admin"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Mode</Label>
-              <Input
-                className="mt-1 h-8 text-xs"
-                value={item.mode ?? ''}
-                onChange={(e) => updateItem(i, 'mode', e.target.value)}
-                placeholder="o-w"
-              />
-            </div>
-          </div>
-        </div>
-      ))}
-      <Button variant="outline" size="sm" onClick={addItem}>
-        <Plus className="mr-1 h-3.5 w-3.5" />
-        Add Item to Copy
-      </Button>
-    </div>
-  )
-}
-
-/* ── Catalog assignment (same pattern as recipe pkginfo Catalogs) ── */
-
-function catalogNameSetsEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) {
-    return false
-  }
-  const sa = [...a]
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .sort()
-  const sb = [...b]
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .sort()
-  for (let i = 0; i < sa.length; i++) {
-    if (sa[i] !== sb[i]) {
-      return false
-    }
-  }
-  return true
-}
-
-function CatalogEditor({
-  pkgId,
-  catalogNames,
-  readOnly = false,
-}: {
-  pkgId: string
-  catalogNames: string[]
-  readOnly?: boolean
-}) {
-  const queryClient = useQueryClient()
-  const [inputText, setInputText] = useState(() => catalogNames.join(', '))
-
-  useEffect(() => {
-    setInputText(catalogNames.join(', '))
-  }, [catalogNames])
-
-  const { data: allCatalogs = [] } = useQuery({
-    queryKey: ['catalogs'],
-    queryFn: () => api.get<CatalogRead[]>('/catalogs'),
-  })
-
-  const sorted = useMemo(
-    () => [...allCatalogs].sort((a, b) => a.name.localeCompare(b.name)),
-    [allCatalogs],
-  )
-
-  const unknownSelected = useMemo(
-    () => catalogNames.filter((n) => !allCatalogs.some((c) => c.name === n)),
-    [catalogNames, allCatalogs],
-  )
-
-  const mutation = useMutation({
-    mutationFn: (names: string[]) =>
-      api.put(`/pkginfo/${pkgId}/catalogs`, { catalog_names: names }),
-    onSuccess: () => {
-      toast.success('Catalogs updated')
-      queryClient.invalidateQueries({ queryKey: ['pkginfo', pkgId] })
-      queryClient.invalidateQueries({ queryKey: ['catalogs'] })
-    },
-    onError: (err: Error) =>
-      toast.error(`Failed to update catalogs: ${err.message}`),
-  })
-
-  const pending = mutation.isPending
-
-  const toggle = (name: string) => {
-    if (readOnly) {
-      return
-    }
-    const next = catalogNames.includes(name)
-      ? catalogNames.filter((c) => c !== name)
-      : [...catalogNames, name]
-    mutation.mutate(next)
-  }
-
-  const applyInput = () => {
-    if (readOnly) {
-      return
-    }
-    const next = parseCatalogListInput(inputText)
-    if (catalogNameSetsEqual(next, catalogNames)) {
-      setInputText(catalogNames.join(', '))
-    } else {
-      mutation.mutate(next)
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      {sorted.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1">
-          {sorted.map((cat) => {
-            const selected = catalogNames.includes(cat.name)
-            return (
-              <Badge
-                key={cat.id}
-                variant={selected ? 'default' : 'outline'}
-                className={cn(
-                  'text-sm',
-                  readOnly || pending ? undefined : 'cursor-pointer',
-                  pending && 'pointer-events-none opacity-60',
-                )}
-                onClick={
-                  readOnly || pending ? undefined : () => toggle(cat.name)
-                }
-              >
-                {cat.name}
-              </Badge>
-            )
-          })}
-        </div>
-      )}
-      {unknownSelected.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">
-            In pkginfo but not in the server catalog list (click to remove when
-            editing)
-          </p>
-          <div className="mb-2 flex flex-wrap gap-1">
-            {unknownSelected.map((name) => (
-              <Badge
-                key={name}
-                variant="default"
-                className={cn(
-                  'text-sm',
-                  readOnly || pending ? undefined : 'cursor-pointer',
-                  pending && 'pointer-events-none opacity-60',
-                )}
-                onClick={readOnly || pending ? undefined : () => toggle(name)}
-              >
-                {name}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      )}
-      <Input
-        id="pkginfo-catalogs-input"
-        value={inputText}
-        readOnly={readOnly}
-        disabled={pending}
-        onChange={
-          readOnly
-            ? undefined
-            : (e) => {
-                setInputText(e.target.value)
-              }
-        }
-        onBlur={readOnly ? undefined : applyInput}
-        onKeyDown={
-          readOnly
-            ? undefined
-            : (e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  ;(e.currentTarget as HTMLInputElement).blur()
-                }
-              }
-        }
-        placeholder="testing, dev, staging or testing/dev/staging"
-        className="text-sm"
-      />
-    </div>
-  )
-}
-
-function CatalogsPromotionCard({
-  pkgId,
-  canEdit,
-  catalogNames,
-  autoPromote,
-  promotionChannelId,
-}: {
-  pkgId: string
-  canEdit: boolean
-  catalogNames: string[]
-  autoPromote: boolean
-  promotionChannelId: string | null
-}) {
-  const queryClient = useQueryClient()
-  const { data: st, isLoading: stLoading } = useQuery({
-    queryKey: ['pkginfo', pkgId, 'promotion-status'],
-    queryFn: () =>
-      api.get<PkgInfoPromotionStatusRead>(`/pkginfo/${pkgId}/promotion-status`),
-    enabled: autoPromote,
-  })
-  const { data: promotionChannels } = useQuery({
-    queryKey: ['promotion-channels'],
-    queryFn: () => api.get<PromotionChannelRead[]>('/promotion-channels'),
-    enabled: autoPromote && canEdit,
-  })
-  const patch = useMutation({
-    mutationFn: (body: {
-      auto_promote?: boolean
-      promotion_channel_id?: string | null
-    }) => api.put(`/pkginfo/${pkgId}`, body),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['pkginfo', pkgId] })
-      void queryClient.invalidateQueries({
-        queryKey: ['pkginfo', pkgId, 'promotion-status'],
-      })
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-  const busy = patch.isPending
-  const noneVal = '__none__'
-  const chValue = promotionChannelId ?? noneVal
-  const orphanPchId =
-    promotionChannelId &&
-    !(promotionChannels ?? []).some((c) => c.id === promotionChannelId)
-      ? promotionChannelId
-      : null
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 space-y-0 pb-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-        <CardTitle>Catalogs &amp; Promotion</CardTitle>
-        <div className="flex shrink-0 items-center justify-end gap-2 sm:ml-auto">
-          <Switch
-            id={`pkg-ap-header-${pkgId}`}
-            checked={autoPromote}
-            disabled={!canEdit || busy}
-            onCheckedChange={(v) => patch.mutate({ auto_promote: v })}
-          />
-          <Label
-            htmlFor={`pkg-ap-header-${pkgId}`}
-            className={cn(
-              'cursor-pointer text-sm',
-              !canEdit && 'cursor-default',
-            )}
-          >
-            Auto-promote
-          </Label>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-0">
-        <CatalogEditor
-          pkgId={pkgId}
-          catalogNames={catalogNames}
-          readOnly={!canEdit}
-        />
-        {autoPromote && (
-          <>
-            <Separator className="my-6" />
-            {stLoading ? (
-              <p className="text-sm text-muted-foreground" aria-live="polite">
-                Loading promotion…
-              </p>
-            ) : st ? (
-              <div className="space-y-4">
-                {canEdit && (
-                  <div className="max-w-md space-y-1.5">
-                    <Label className="text-xs" htmlFor={`pkg-pch-${pkgId}`}>
-                      Promotion channel
-                    </Label>
-                    <Select
-                      value={chValue}
-                      onValueChange={(v) => {
-                        const next = v === noneVal ? null : v
-                        patch.mutate({ promotion_channel_id: next })
-                      }}
-                      disabled={busy}
-                    >
-                      <SelectTrigger
-                        id={`pkg-pch-${pkgId}`}
-                        className="w-full text-sm"
-                      >
-                        <SelectValue placeholder="None" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={noneVal}>None</SelectItem>
-                        {orphanPchId ? (
-                          <SelectItem value={orphanPchId}>
-                            Current (not in list)
-                          </SelectItem>
-                        ) : null}
-                        {(promotionChannels ?? [])
-                          .slice()
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((ch) => (
-                            <SelectItem key={ch.id} value={ch.id}>
-                              {ch.name}
-                              {ch.steps.length
-                                ? ` (${ch.steps.length} step${
-                                    ch.steps.length === 1 ? '' : 's'
-                                  })`
-                                : ''}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {!canEdit && st.channel_name ? (
-                  <p className="text-xs text-muted-foreground">
-                    Channel: {st.channel_name}
-                  </p>
-                ) : null}
-                {st.catalog_memberships.length > 0 && (
-                  <p className="text-xs text-muted-foreground break-words">
-                    {st.catalog_memberships
-                      .map(
-                        (m) =>
-                          `${m.catalog_name} (${formatDate(m.entered_at)})`,
-                      )
-                      .join(' · ')}
-                  </p>
-                )}
-                {st.legs.length > 0 ? (
-                  <ul className="list-none space-y-1.5 text-sm text-pretty text-foreground">
-                    {st.legs.map((leg) => (
-                      <li key={leg.step_order}>
-                        <span className="text-muted-foreground">
-                          {leg.step_order}.{' '}
-                        </span>
-                        {leg.source_catalog_name} → {leg.target_catalog_name}
-                        {leg.dwell_days > 0
-                          ? ` · ${leg.dwell_days}d from ${formatDate(leg.dwell_clock_start_at)}`
-                          : ''}
-                        {' · '}
-                        <span className="text-muted-foreground">
-                          {leg.status === 'waiting'
-                            ? `~${leg.days_remaining}d until ${formatDate(leg.promote_at)}`
-                            : 'Next run'}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : st.summary ? (
-                  <p className="text-sm text-muted-foreground">{st.summary}</p>
-                ) : null}
-              </div>
-            ) : null}
-          </>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function ProductionRolloutCard({
-  pkgId,
-  canEdit,
-}: {
-  pkgId: string
-  canEdit: boolean
-}) {
-  const queryClient = useQueryClient()
-  const { data: st, isLoading } = useQuery({
-    queryKey: ['pkginfo', pkgId, 'shard-status'],
-    queryFn: () =>
-      api.get<PkgInfoShardStatusRead>(`/pkginfo/${pkgId}/shard-status`),
-  })
-
-  const [overrideEnabled, setOverrideEnabled] = useState(false)
-  const [overrideValue, setOverrideValue] = useState(25)
-
-  useEffect(() => {
-    if (!st) return
-    const hasOverride = st.shard_percent_override != null
-    setOverrideEnabled(hasOverride)
-    setOverrideValue(
-      st.shard_percent_override ??
-        st.shard_percent ??
-        st.scheduled_shard_percent ??
-        25,
-    )
-  }, [st])
-
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['pkginfo', pkgId] })
-    void queryClient.invalidateQueries({
-      queryKey: ['pkginfo', pkgId, 'shard-status'],
-    })
-    void queryClient.invalidateQueries({ queryKey: ['pkginfo'] })
-    void queryClient.invalidateQueries({ queryKey: ['pkginfo', 'shard-queue'] })
-  }
-
-  const startMut = useMutation({
-    mutationFn: () => api.post(`/pkginfo/${pkgId}/shard/start`, {}),
-    onSuccess: () => {
-      toast.success('Production rollout started')
-      invalidate()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-  const pauseMut = useMutation({
-    mutationFn: () => api.post(`/pkginfo/${pkgId}/shard/pause`, {}),
-    onSuccess: () => {
-      toast.success('Production rollout paused')
-      invalidate()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-  const completeMut = useMutation({
-    mutationFn: () => api.post(`/pkginfo/${pkgId}/shard/complete`, {}),
-    onSuccess: () => {
-      toast.success('Production rollout completed')
-      invalidate()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-  const overrideMut = useMutation({
-    mutationFn: (shard_percent: number | null) =>
-      api.put<PkgInfoShardStatusRead>(`/pkginfo/${pkgId}/shard/override`, {
-        shard_percent,
-      }),
-    onSuccess: () => {
-      toast.success('Shard override updated')
-      invalidate()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
-  const busy =
-    startMut.isPending ||
-    pauseMut.isPending ||
-    completeMut.isPending ||
-    overrideMut.isPending
-  const canStart =
-    st?.deployment_status === 'pending_rollout' ||
-    st?.shard_rollout_status === 'pending_approval'
-  const canPause = st?.deployment_status === 'sharding'
-  const canComplete =
-    st?.deployment_status === 'sharding' ||
-    st?.deployment_status === 'paused' ||
-    st?.deployment_status === 'pending_rollout'
-
-  const showShardOverride =
-    canEdit &&
-    st &&
-    st.deployment_status !== 'not_in_production' &&
-    st.deployment_status !== 'pending_rollout' &&
-    st.deployment_status !== 'fully_deployed'
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 space-y-0 pb-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-        <CardTitle>Production rollout</CardTitle>
-        {canEdit && st?.active ? (
-          <div className="flex flex-wrap gap-2">
-            {canStart ? (
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() => startMut.mutate()}
-              >
-                Start rollout
-              </Button>
-            ) : null}
-            {canPause ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => pauseMut.mutate()}
-              >
-                Pause
-              </Button>
-            ) : null}
-            {canComplete ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => completeMut.mutate()}
-              >
-                Force complete
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : st ? (
-          <>
-            {st.manifest_warning ? (
-              <div className={manifestRiskAlertClass}>
-                Net-new title referenced in manifests while not fully deployed.
-                High-shard devices may report missing catalog items until
-                rollout completes.
-                {st.manifest_names.length ? (
-                  <span className="mt-1 block text-xs opacity-90">
-                    Manifests: {st.manifest_names.join(', ')}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-            {st.is_first_production_deploy && !st.manifest_warning ? (
-              <Badge
-                variant="outline"
-                className="border-amber-500 text-amber-700"
-              >
-                First production deploy
-              </Badge>
-            ) : null}
-            <p className="text-sm text-muted-foreground">{st.summary}</p>
-            {st.deployment_status === 'sharding' && st.shard_percent != null ? (
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>
-                    Day {st.current_day ?? '—'} of {st.rollout_days}
-                  </span>
-                  <span>{st.shard_percent}% fleet</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-amber-500"
-                    style={{ width: `${st.shard_percent}%` }}
-                  />
-                </div>
-              </div>
-            ) : null}
-            {st.installable_condition ? (
-              <p className="font-mono text-xs text-muted-foreground">
-                {st.installable_condition}
-              </p>
-            ) : null}
-            {showShardOverride ? (
-              <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      id={`shard-override-${pkgId}`}
-                      checked={overrideEnabled}
-                      disabled={busy}
-                      onCheckedChange={(enabled) => {
-                        setOverrideEnabled(enabled)
-                        if (!enabled) {
-                          overrideMut.mutate(null)
-                        } else {
-                          overrideMut.mutate(overrideValue)
-                        }
-                      }}
-                    />
-                    <Label
-                      htmlFor={`shard-override-${pkgId}`}
-                      className="font-normal"
-                    >
-                      Manual shard override
-                    </Label>
-                  </div>
-                  <span className="font-mono text-sm tabular-nums">
-                    {overrideEnabled
-                      ? `${overrideValue}%`
-                      : st.scheduled_shard_percent != null
-                        ? `${st.scheduled_shard_percent}% (auto)`
-                        : '—'}
-                  </span>
-                </div>
-                {overrideEnabled ? (
-                  <div className="space-y-2">
-                    <Slider
-                      min={1}
-                      max={100}
-                      step={1}
-                      value={[overrideValue]}
-                      disabled={busy}
-                      onValueChange={(v) => setOverrideValue(v[0] ?? 1)}
-                      onValueCommit={(v) => {
-                        const pct = v[0] ?? 1
-                        setOverrideValue(pct)
-                        overrideMut.mutate(pct)
-                      }}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Sets{' '}
-                      <code className="text-xs">installable_condition</code> to{' '}
-                      <code className="text-xs">
-                        shard &lt;= {overrideValue}
-                      </code>
-                      . Automatic daily progression is paused while overridden.
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Enable to pin a specific fleet percentage instead of the
-                    scheduled daily rollout.
-                  </p>
-                )}
-              </div>
-            ) : null}
-          </>
-        ) : null}
-      </CardContent>
-    </Card>
   )
 }

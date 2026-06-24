@@ -528,40 +528,28 @@
   color: inherit;
 }
 .audit-json-diff .json-diff-viewer td.line-remove {
-  background-color: var(--audit-diff-remove-bg) !important;
-  color: var(--audit-diff-remove-fg) !important;
+  background-color: var(--audit-diff-remove-bg);
+  color: var(--audit-diff-remove-fg);
 }
 .audit-json-diff .json-diff-viewer td.line-add {
-  background-color: var(--audit-diff-add-bg) !important;
-  color: var(--audit-diff-add-fg) !important;
+  background-color: var(--audit-diff-add-bg);
+  color: var(--audit-diff-add-fg);
 }
 .audit-json-diff .json-diff-viewer td.line-modify {
-  background-color: var(--audit-diff-modify-bg) !important;
-  color: var(--audit-diff-modify-fg) !important;
+  background-color: var(--audit-diff-modify-bg);
+  color: var(--audit-diff-modify-fg);
 }
 .audit-json-diff .json-diff-viewer td.line-remove.line-number,
 .audit-json-diff .json-diff-viewer td.line-add.line-number,
 .audit-json-diff .json-diff-viewer td.line-modify.line-number {
-  color: color-mix(
-    in oklch,
-    var(--audit-diff-remove-fg) 65%,
-    transparent
-  ) !important;
+  color: color-mix(in oklch, var(--audit-diff-remove-fg) 65%, transparent);
   opacity: 1;
 }
 .audit-json-diff .json-diff-viewer td.line-add.line-number {
-  color: color-mix(
-    in oklch,
-    var(--audit-diff-add-fg) 65%,
-    transparent
-  ) !important;
+  color: color-mix(in oklch, var(--audit-diff-add-fg) 65%, transparent);
 }
 .audit-json-diff .json-diff-viewer td.line-modify.line-number {
-  color: color-mix(
-    in oklch,
-    var(--audit-diff-modify-fg) 65%,
-    transparent
-  ) !important;
+  color: color-mix(in oklch, var(--audit-diff-modify-fg) 65%, transparent);
 }
 .audit-json-diff .json-diff-viewer td.line-remove:not(.line-number) {
   box-shadow: inset 3px 0 0 var(--audit-diff-remove-accent);
@@ -575,7 +563,7 @@
 .audit-json-diff .json-diff-viewer pre .inline-diff-remove {
   background: var(--audit-diff-inline-remove-bg);
   border-radius: 2px;
-  color: var(--audit-diff-remove-fg) !important;
+  color: var(--audit-diff-remove-fg);
   font-weight: 600;
   text-decoration: line-through;
   text-decoration-color: var(--audit-diff-remove-accent);
@@ -583,7 +571,7 @@
 .audit-json-diff .json-diff-viewer pre .inline-diff-add {
   background: var(--audit-diff-inline-add-bg);
   border-radius: 2px;
-  color: var(--audit-diff-add-fg) !important;
+  color: var(--audit-diff-add-fg);
   font-weight: 600;
   text-decoration: underline;
   text-decoration-color: var(--audit-diff-add-accent);

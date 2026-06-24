@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ListChecks } from 'lucide-react'
-import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { parseAsString, useQueryState } from 'nuqs'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable } from '@/components/data-table'
@@ -18,16 +17,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useDocumentTitle } from '@/hooks/use-document-title'
+import { usePaginatedListQuery } from '@/hooks/use-paginated-list-query'
 import {
   installReportLinkKey,
   usePkginfoLinksForInstallReports,
 } from '@/hooks/use-pkginfo-display-labels'
+import type { ClientInstallReportListItem } from '@/lib/api'
 import {
-  api,
-  type ClientInstallReportListItem,
-  type PaginatedResponse,
-} from '@/lib/api'
-import { formatDateTime, formatInstallReason } from '@/lib/format'
+  formatDateTime,
+  formatInstallReason,
+  installReportStatusVariant,
+} from '@/lib/format'
 import { looseVersionSortingFn } from '@/lib/loose-version'
 
 const STATUS_OPTIONS = [
@@ -37,20 +37,6 @@ const STATUS_OPTIONS = [
   'removal_failed',
   'unknown',
 ]
-
-function statusVariant(status: string) {
-  switch (status) {
-    case 'installed':
-      return 'default' as const
-    case 'failed':
-    case 'removal_failed':
-      return 'destructive' as const
-    case 'removed':
-      return 'secondary' as const
-    default:
-      return 'outline' as const
-  }
-}
 
 function makeColumns(
   links:
@@ -112,7 +98,7 @@ function makeColumns(
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => (
-        <Badge variant={statusVariant(row.original.status)}>
+        <Badge variant={installReportStatusVariant(row.original.status)}>
           {row.original.status}
         </Badge>
       ),
@@ -161,28 +147,27 @@ function makeColumns(
 
 export default function ReportingInstallsPage() {
   useDocumentTitle('Reporting', 'Installs')
-  const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
-  const [pageSize, setPageSize] = useQueryState(
-    'pageSize',
-    parseAsInteger.withDefault(50),
-  )
   const [search, setSearch] = useQueryState('q', parseAsString.withDefault(''))
   const [status, setStatus] = useQueryState(
     'status',
     parseAsString.withDefault(''),
   )
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['reports-installs', page, pageSize, search, status],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      params.set('page', String(page))
-      params.set('page_size', String(pageSize))
+  const {
+    page,
+    setPage,
+    pageSize,
+    resetPage,
+    onPageSizeChange,
+    data,
+    isLoading,
+  } = usePaginatedListQuery<ClientInstallReportListItem>({
+    queryKeyPrefix: ['reports-installs'],
+    path: '/reports/installs',
+    filterKey: [search, status],
+    appendSearchParams: (params) => {
       if (search.trim()) params.set('search', search.trim())
       if (status.trim()) params.set('status', status.trim())
-      return api.get<PaginatedResponse<ClientInstallReportListItem>>(
-        `/reports/installs?${params.toString()}`,
-      )
     },
   })
 
@@ -207,7 +192,7 @@ export default function ReportingInstallsPage() {
         onClear={() => {
           setSearch(null)
           setStatus(null)
-          setPage(1)
+          resetPage()
         }}
       >
         <Input
@@ -215,7 +200,7 @@ export default function ReportingInstallsPage() {
           value={search}
           onChange={(e) => {
             setSearch(e.target.value || null)
-            setPage(1)
+            resetPage()
           }}
           className="max-w-sm"
           aria-label="Search installs"
@@ -224,7 +209,7 @@ export default function ReportingInstallsPage() {
           value={status || '_all'}
           onValueChange={(v) => {
             setStatus(v === '_all' ? null : v)
-            setPage(1)
+            resetPage()
           }}
         >
           <SelectTrigger className="w-full md:w-[180px]">
@@ -250,10 +235,7 @@ export default function ReportingInstallsPage() {
           pageSize={pageSize}
           total={data?.total}
           onPageChange={setPage}
-          onPageSizeChange={(size) => {
-            setPageSize(size)
-            setPage(1)
-          }}
+          onPageSizeChange={onPageSizeChange}
           isLoading={isLoading}
         />
       </div>
