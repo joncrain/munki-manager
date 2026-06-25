@@ -37,7 +37,7 @@ export function FilterBadge({
       tabIndex={0}
       title={title}
       className={cn(
-        'relative z-10 cursor-pointer transition-opacity hover:opacity-80',
+        'cursor-pointer transition-opacity hover:opacity-80',
         className,
       )}
       onClick={(event) => handleFilterActivation(event, onFilter)}
