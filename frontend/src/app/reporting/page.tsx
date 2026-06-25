@@ -228,7 +228,7 @@ export default function ReportingPage() {
       >
         <FilterSheetField
           label="Check-in activity"
-          hasValue={checkinFilterIsActive(parseCheckinFilter(checkinFilterRaw))}
+          hasValue={checkinFilterIsActive(checkinFilterRaw)}
           onClear={() => {
             setCheckinFilter(null)
             resetPage()
