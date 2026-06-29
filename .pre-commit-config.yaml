@@ -17,7 +17,7 @@ repos:
       - id: check-github-workflows
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.25.2
+    rev: v1.26.1
     hooks:
       - id: zizmor
         files: ^\.github/(workflows/.*\.ya?ml|dependabot\.ya?ml|zizmor\.ya?ml)$
@@ -32,7 +32,7 @@ repos:
         types_or: [javascript, jsx, ts, tsx, json, css]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.17
+    rev: v0.15.18
     hooks:
       - id: ruff-format
         files: ^backend/
