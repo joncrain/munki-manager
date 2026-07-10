@@ -22,7 +22,7 @@
     "cronstrue": "^3.21.0",
     "date-fns": "^4.4.0",
     "jotai": "^2.20.1",
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^5.2.0",
     "json-diff-kit": "^1.0.35",
     "lucide-react": "^1.22.0",
     "marked": "^18.0.5",
