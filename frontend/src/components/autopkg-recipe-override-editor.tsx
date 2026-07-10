@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import yaml from 'js-yaml'
+import { dump as yamlDump } from 'js-yaml'
 import {
   Braces,
   Download,
@@ -678,7 +678,7 @@ export function RecipeOverrideEditor({
     if (!runnerPlistXml) return ''
     try {
       const obj = plistParse(runnerPlistXml) as unknown
-      return yaml.dump(obj, { lineWidth: 120, noRefs: true, sortKeys: true })
+      return yamlDump(obj, { lineWidth: 120, noRefs: true, sortKeys: true })
     } catch (e) {
       return `Could not convert to YAML: ${e instanceof Error ? e.message : String(e)}`
     }
