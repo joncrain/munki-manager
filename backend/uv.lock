@@ -315,7 +315,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.43.36" },
     { name = "croniter", specifier = ">=5.0.0" },
     { name = "faker", marker = "extra == 'dev'", specifier = ">=37.0.0" },
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.138.0" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.139.0" },
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=13.0.0" },
     { name = "google-genai", specifier = ">=2.10.0" },
     { name = "httpx", specifier = ">=0.27.0" },
